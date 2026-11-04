@@ -27,13 +27,13 @@ results export as BibTeX, APA, Chicago, MLA, plain text, JSON or CSV.
 
 Minimum requirements:
 
-| | With OCR (scans too) | Text-layer PDFs only |
-|---|---|---|
-| GPU memory | **10 GB** | **6 GB** |
-| CPU | 4 cores | 4 cores |
-| RAM | 12 GB | 12 GB |
-| Disk | 6 GB | 6 GB |
-| Speed, few footnotes | 0.3 s per page | 0.18 s per page |
+| | With OCR (scans too) |
+|---|---|
+| GPU memory | **10 GB** |
+| CPU | 4 cores |
+| RAM | 12 GB |
+| Disk | 6 GB |
+| Speed, few footnotes | 0.3 s per page |
 
 - **Software:** Linux and Python 3.10. The GPU must be NVIDIA: the pinned build is PyTorch 2.6
   with CUDA 12.4.

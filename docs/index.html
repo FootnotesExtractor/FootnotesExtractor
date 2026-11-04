@@ -104,8 +104,8 @@ ol.steps strong { display: block; margin-bottom: 2px; }
 @media (max-width: 760px) { .row { grid-template-columns: 1fr; gap: 12px; } }
 
 .table-box { overflow-x: auto; margin: 6px 0 16px; }
-table { border-collapse: collapse; font-size: 15.5px; min-width: 520px; width: 100%; font-variant-numeric: tabular-nums; }
-th, td { text-align: left; padding: 8px 14px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+table { border-collapse: collapse; font-size: 15.5px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px 40px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-weight: 600; font-size: 14.5px; }
 td:first-child { color: var(--muted); }
 
@@ -240,13 +240,13 @@ footer a { color: inherit; }
       <p>Minimum requirements:</p>
       <div class="table-box">
         <table>
-          <thead><tr><th scope="col"></th><th scope="col">With OCR (scans too)</th><th scope="col">Text-layer PDFs only</th></tr></thead>
+          <thead><tr><th scope="col"></th><th scope="col">With OCR (scans too)</th></tr></thead>
           <tbody>
-            <tr><td>GPU memory</td><td><strong>10 GB</strong></td><td><strong>6 GB</strong></td></tr>
-            <tr><td>CPU</td><td>4 cores</td><td>4 cores</td></tr>
-            <tr><td>RAM</td><td>12 GB</td><td>12 GB</td></tr>
-            <tr><td>Disk</td><td>6 GB</td><td>6 GB</td></tr>
-            <tr><td>Speed, few footnotes</td><td>0.3 s per page</td><td>0.18 s per page</td></tr>
+            <tr><td>GPU memory</td><td><strong>10 GB</strong></td></tr>
+            <tr><td>CPU</td><td>4 cores</td></tr>
+            <tr><td>RAM</td><td>12 GB</td></tr>
+            <tr><td>Disk</td><td>6 GB</td></tr>
+            <tr><td>Speed, few footnotes</td><td>0.3 s per page</td></tr>
           </tbody>
         </table>
       </div>
