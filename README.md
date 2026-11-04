@@ -11,9 +11,7 @@ ibid. and op. cit. A reviewer corrects anything in an interactive viewer, and th
 results export as BibTeX, APA, Chicago, MLA, plain text, JSON or CSV.
 
 **Project page:** <https://footnotesextractor.github.io/FootnotesExtractor/>
-
-> **The model weights are coming to the Hugging Face Hub shortly.** The code is available
-> now, but the app cannot process documents without the weights.
+**Models:** <https://huggingface.co/FootnotesExtractor/footnotes-extractor-v2-models>
 
 ## How it works
 
@@ -172,6 +170,10 @@ work; updating the app leaves them alone. Passwords and API keys are stored only
 
 FootnotesExtractor is released under the [GNU Affero General Public License v3.0](LICENSE).
 Copyright (C) 2026 the FootnotesExtractor authors.
+
+The [model weights](https://huggingface.co/FootnotesExtractor/footnotes-extractor-v2-models) are
+released under the same licence. Some of the books used for training are under non-commercial
+licences, so commercial use of the models would require retraining without them.
 
 It relies on Ultralytics and PyMuPDF (AGPL-3.0) and Surya (GPL-3.0). Surya's model weights have
 their own licence, `cc-by-nc-sa-4.0`, with a waiver for organisations below certain revenue and
