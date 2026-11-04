@@ -1,0 +1,35 @@
+# Replace this with your real domain before deploying. Caddy then
+# automatically obtains and renews a Let's Encrypt certificate for it —
+# nothing else to configure — provided:
+#   - DNS for the domain points at this server's public IP
+#   - ports 80 and 443 are reachable from the internet (80 is needed
+#     briefly for the ACME HTTP-01 challenge, then redirects to 443)
+yourdomain.example {
+    reverse_proxy 127.0.0.1:5002
+
+    # Matches app.py's MAX_CONTENT_LENGTH (900MB) — PDF uploads larger than
+    # that are rejected by Flask anyway, but Caddy would otherwise cut the
+    # request off at its own smaller default first with a less useful error.
+    request_body {
+        max_size 910MB
+    }
+
+    encode gzip
+
+    log {
+        output file /var/log/caddy/footnotes-access.log
+    }
+}
+
+# No domain yet / testing on the server's bare IP first? Caddy can't get a
+# real certificate without a domain (Let's Encrypt has no concept of
+# certs-for-an-IP-address for this use case), so use a self-signed one
+# instead by replacing the block above with:
+#
+# :443 {
+#     tls internal
+#     reverse_proxy 127.0.0.1:5002
+# }
+#
+# Browsers will show a certificate warning (expected, self-signed) until
+# you swap in a real domain and switch back to the block above.

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FootnotesExtractor</title>
+<meta name="description" content="Open-source system that extracts and parses bibliographic references from the footnotes of scholarly books and articles.">
+<style>
+/* A page set like a page of a scholarly book: serif headline, a short rule above
+   small print, and real numbered footnotes for every source. Colours from the
+   project's deck; part colours follow the viewer. System fonts only: no third-party
+   requests. */
+:root {
+  --paper: #ffffff;
+  --tint: #eeedf6;
+  --ink: #16213f;
+  --muted: #5b6478;
+  --accent: #4e4a93;
+  --deep: #002870;
+  --line: #d6d8e3;
+  --code-bg: #f4f5f9;
+  --on-deep: #ffffff;
+  --author: #d9f0e3; --title: #dbe7fb; --place: #d3f1ef; --year: #fdeccb; --vol: #e7e0fa; --pages: #fbdcd9;
+  --back: #fde3c8;
+  --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --body: "Segoe UI", Calibri, Carlito, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #12162a; --tint: #1f2342; --ink: #e8eaf4; --muted: #a4abc2; --accent: #b3aef0; --deep: #1d2a5e;
+    --line: #2e3454; --code-bg: #1a1f38; --on-deep: #ffffff;
+    --author: #1d4634; --title: #1f3a66; --place: #164a48; --year: #55431a; --vol: #3b2f6b; --pages: #5c2c2a; --back: #5a3d1c;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #12162a; --tint: #1f2342; --ink: #e8eaf4; --muted: #a4abc2; --accent: #b3aef0; --deep: #1d2a5e;
+  --line: #2e3454; --code-bg: #1a1f38; --on-deep: #ffffff;
+  --author: #1d4634; --title: #1f3a66; --place: #164a48; --year: #55431a; --vol: #3b2f6b; --pages: #5c2c2a; --back: #5a3d1c;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.6 var(--body); }
+.wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+@media (max-width: 500px) { .wrap { padding: 0 16px; } }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+img { max-width: 100%; height: auto; display: block; }
+p { margin: 0 0 1em; max-width: 68ch; }
+sup.fn { font-size: .62em; line-height: 0; }
+sup.fn a { text-decoration: none; font-weight: 600; font-family: var(--body); }
+
+header.top { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between; padding: 20px 0; }
+.brand { font: 600 20px var(--display); color: var(--accent); text-decoration: none; }
+nav { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 15px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); text-decoration: underline; }
+
+h1, h2, h3 { font-family: var(--display); color: var(--accent); text-wrap: balance; font-weight: 600; }
+h1 { font-size: clamp(38px, 7vw, 68px); line-height: 1.06; letter-spacing: -.012em; margin: 28px 0 22px; max-width: 17ch; }
+h2 { font-size: clamp(27px, 4vw, 36px); line-height: 1.15; margin: 0 0 18px; }
+h3 { font-size: 21px; margin: 0 0 6px; }
+.lead { font-size: 20px; line-height: 1.5; max-width: 60ch; }
+section { padding: 52px 0 0; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 8px; }
+.btn { display: inline-block; padding: 10px 20px; border-radius: 4px; font-weight: 600; font-size: 16px; text-decoration: none; border: 1px solid var(--deep); }
+.btn.primary { background: var(--deep); color: var(--on-deep); }
+.btn.secondary { color: var(--ink); border-color: var(--line); }
+.btn.secondary:hover { border-color: var(--accent); }
+
+/* The motif: the short rule a book sets above its footnotes */
+.rule { width: 150px; height: 0; border-top: 1px solid var(--ink); margin: 34px 0 14px; }
+.specimens { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 44px; }
+@media (max-width: 760px) { .specimens { grid-template-columns: 1fr; } }
+.printed { font: 16px/1.5 var(--display); margin: 0 0 12px; }
+mark { color: inherit; border-radius: 2px; padding: 0 2px; }
+.p-author { background: var(--author); } .p-title { background: var(--title); } .p-place { background: var(--place); }
+.p-year { background: var(--year); } .p-vol { background: var(--vol); } .p-pages { background: var(--pages); } .p-back { background: var(--back); }
+.parts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 0; font-size: 14.5px; line-height: 1.4; }
+.parts dt { color: var(--muted); }
+.parts dd { margin: 0; }
+.parts .inferred { color: var(--muted); font-size: 12.5px; margin-left: 6px; }
+.specimen-title { font-size: 13px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+
+.notice { background: var(--tint); padding: 14px 18px; margin: 30px 0 0; border-radius: 4px; }
+.notice p { margin: 0; max-width: none; }
+
+figure { margin: 0; }
+.shot { border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+figcaption { font-size: 14.5px; color: var(--muted); margin-top: 8px; max-width: 68ch; }
+.after-steps { margin-top: 30px; }
+
+ol.steps { list-style: none; counter-reset: step; display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; padding: 0; margin: 10px 0 0; }
+@media (max-width: 860px) { ol.steps { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 500px) { ol.steps { grid-template-columns: 1fr; } }
+ol.steps li { counter-increment: step; font-size: 15.5px; line-height: 1.45; }
+ol.steps li::before { content: counter(step); display: block; font: 600 30px/1.1 var(--display); color: var(--accent); margin-bottom: 4px; }
+ol.steps strong { display: block; margin-bottom: 2px; }
+
+.review { display: grid; gap: 40px; margin-top: 12px; }
+.row { display: grid; grid-template-columns: 5fr 8fr; gap: 28px; align-items: start; }
+@media (max-width: 760px) { .row { grid-template-columns: 1fr; gap: 12px; } }
+
+.table-box { overflow-x: auto; margin: 6px 0 16px; }
+table { border-collapse: collapse; font-size: 15.5px; min-width: 520px; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px 14px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 14.5px; }
+td:first-child { color: var(--muted); }
+
+.code { position: relative; margin: 8px 0 16px; }
+pre { background: var(--code-bg); margin: 0; padding: 14px 16px; border-radius: 4px; overflow-x: auto; font: 14px/1.55 var(--mono); }
+code { font-family: var(--mono); font-size: .88em; background: var(--code-bg); padding: 1px 4px; border-radius: 3px; }
+pre code { background: none; padding: 0; font-size: inherit; }
+.copy { position: absolute; top: 8px; right: 8px; font: 600 12.5px var(--body); color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 3px; padding: 3px 9px; cursor: pointer; }
+.copy:hover { color: var(--accent); border-color: var(--accent); }
+ol.use { padding-left: 1.3em; max-width: 68ch; }
+ol.use li { margin-bottom: .55em; }
+
+.notes { font-size: 14.5px; line-height: 1.5; color: var(--muted); margin: 0; padding: 0; list-style: none; counter-reset: note; }
+.notes li { counter-increment: note; padding-left: 1.6em; position: relative; margin-bottom: 6px; max-width: 86ch; }
+.notes li::before { content: counter(note); position: absolute; left: 0; top: -.2em; font-size: .78em; font-weight: 600; color: var(--accent); }
+.notes li:target { color: var(--ink); }
+
+footer { background: var(--deep); color: var(--on-deep); margin-top: 56px; padding: 30px 0 34px; font-size: 14.5px; line-height: 1.5; }
+footer p { max-width: 92ch; margin: 0 0 .7em; }
+footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#">FootnotesExtractor</a>
+    <nav aria-label="Sections">
+      <a href="#use">Use</a>
+      <a href="#how">How it works</a>
+      <a href="#install">Install</a>
+      <a href="#api">API</a>
+      <a href="https://github.com/FootnotesExtractor/FootnotesExtractor">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Citation indexes read reference lists. Books cite in footnotes.</h1>
+    <p class="lead">FootnotesExtractor reads the footnotes of a scholarly book, born-digital or scanned, finds every reference in them, tags its parts and hands them to you as data you can count, link and export. It runs on your own server.</p>
+    <div class="actions">
+      <a class="btn primary" href="#install">Install</a>
+      <a class="btn secondary" href="https://github.com/FootnotesExtractor/FootnotesExtractor">Source code on GitHub</a>
+    </div>
+
+    <div class="rule" aria-hidden="true"></div>
+    <div class="specimens">
+      <div>
+        <p class="specimen-title">A reference, tagged</p>
+        <p class="printed"><sup>1</sup> <mark class="p-author">M. de Wulf</mark>, <mark class="p-title">Histoire de la philosophie médiévale</mark>, <mark class="p-place">Louvain — Paris</mark> <mark class="p-year">1934</mark>, t. <mark class="p-vol">I</mark>, s. <mark class="p-pages">166—170</mark>.<sup class="fn"><a href="#n1" aria-label="Source: note 1">1</a></sup></p>
+        <dl class="parts">
+          <dt>Author</dt><dd>M. de Wulf: first name M., last name de Wulf</dd>
+          <dt>Title</dt><dd>Histoire de la philosophie médiévale</dd>
+          <dt>Place</dt><dd>Louvain — Paris</dd>
+          <dt>Year</dt><dd>1934</dd>
+          <dt>Volume</dt><dd>I</dd>
+          <dt>Pages</dt><dd>166—170</dd>
+        </dl>
+      </div>
+      <div>
+        <p class="specimen-title">An ibid., resolved</p>
+        <p class="printed"><sup>76</sup> <mark class="p-back">Ibid.</mark>, pp. <mark class="p-pages">2-5</mark>.<sup class="fn"><a href="#n2" aria-label="Source: note 2">2</a></sup></p>
+        <dl class="parts">
+          <dt>Refers to</dt><dd>footnote 75, on page 3</dd>
+          <dt>Author</dt><dd>Drexl <span class="inferred">taken from footnote 75</span></dd>
+          <dt>Title</dt><dd>Achmets Traumbuch <span class="inferred">taken from footnote 75</span></dd>
+          <dt>Pages</dt><dd>2-5</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="notice" role="note">
+      <p><strong>The model weights are coming to the Hugging Face Hub shortly.</strong> The code is available now, but the app cannot process documents without the weights.</p>
+    </div>
+
+    <section id="use">
+      <h2>How you use it</h2>
+      <div class="review">
+        <div class="row">
+          <div>
+            <h3>1. Upload</h3>
+            <p>Drop one or more PDFs on the start page, born-digital or scanned, up to 900 MB each. When processing ends, the book opens in the viewer with every footnote boxed, read and tagged.</p>
+          </div>
+          <figure>
+            <img class="shot" src="assets/upload.gif" width="1440" height="900" alt="Recording: a PDF is uploaded, processed, and opens in the viewer with its footnotes boxed and their references tagged.">
+            <figcaption>A complete 88-page book. The wait is shortened here; the real run took about 3 minutes.<sup class="fn"><a href="#n1" aria-label="Source: note 1">1</a></sup></figcaption>
+          </figure>
+        </div>
+        <div class="row">
+          <div>
+            <h3>2. Correct what is wrong</h3>
+            <p>Press <code>B</code> and draw a box around a footnote the detector missed: about a second and a half later it is read and tagged. Click a box to change it, use the pencil to fix a footnote's text, split or merge footnotes, relabel any part, and undo any of it.</p>
+            <p>Switch on <strong>Layout Assist</strong> for suggestions. It learns each book's layout and citation style and points out what may be wrong. You decide what changes.</p>
+          </div>
+          <figure>
+            <img class="shot" loading="lazy" src="assets/box.gif" width="1440" height="900" alt="Recording: the reviewer draws a box around a footnote, and it is read and tagged.">
+            <figcaption>Real time, nothing cut.<sup class="fn"><a href="#n1" aria-label="Source: note 1">1</a></sup></figcaption>
+          </figure>
+        </div>
+        <div class="row">
+          <div>
+            <h3>3. Check back-references</h3>
+            <p>Each ibid. and op. cit. shows the work it refers to. When a rule picks the wrong one, point it to the right one: it takes over that work's author, title and year, and the whole book is resolved again.</p>
+          </div>
+          <figure>
+            <img class="shot" loading="lazy" src="assets/relink.gif" width="1440" height="900" alt="Recording: an Ibid. is linked to another earlier reference and takes over its author, journal, year and title.">
+            <figcaption>The Ibid. is pointed to another work; its parts follow.<sup class="fn"><a href="#n2" aria-label="Source: note 2">2</a></sup></figcaption>
+          </figure>
+        </div>
+        <div class="row">
+          <div>
+            <h3>4. Export</h3>
+            <p>Use the <strong>Export Citations</strong> button: BibTeX, APA, Chicago, MLA, the references as printed, or JSON and CSV with everything. Each cited work appears once, with every place it is cited: PDF page, footnote number and the reference as printed.</p>
+          </div>
+          <figure>
+            <img class="shot" loading="lazy" src="assets/export.gif" width="1440" height="900" alt="Recording: a book is exported as BibTeX, and the file lists each work with every place it is cited.">
+            <figcaption>Expanded BibTeX: ibid. and op. cit. count for the work they refer to.<sup class="fn"><a href="#n1" aria-label="Source: note 1">1</a></sup></figcaption>
+          </figure>
+        </div>
+      </div>
+      <p class="after-steps">An administrator switches optional tools on per user in <strong>Admin → Users</strong>, such as linking references to a reference list given as BibTeX.</p>
+    </section>
+
+    <section id="how">
+      <h2>How it works</h2>
+      <ol class="steps">
+        <li><strong>Find footnotes</strong>A detector finds the footnote areas on each page image.</li>
+        <li><strong>Read them</strong>Text comes from the PDF's text layer or, for scans, from OCR.</li>
+        <li><strong>Split them</strong>Rules follow the footnote numbers, cut each area into single footnotes and rejoin notes that run over a page.</li>
+        <li><strong>Parse references</strong>Transformer models find each reference and tag its parts, down to first and last names.</li>
+        <li><strong>Resolve</strong>Rules link ibid. and op. cit. to the work they refer to, each type by its own rule.</li>
+      </ol>
+    </section>
+
+    <section id="install">
+      <h2>Install</h2>
+      <p>Minimum requirements:</p>
+      <div class="table-box">
+        <table>
+          <thead><tr><th scope="col"></th><th scope="col">With OCR (scans too)</th><th scope="col">Text-layer PDFs only</th></tr></thead>
+          <tbody>
+            <tr><td>GPU memory</td><td><strong>10 GB</strong></td><td><strong>6 GB</strong></td></tr>
+            <tr><td>CPU</td><td>4 cores</td><td>4 cores</td></tr>
+            <tr><td>RAM</td><td>12 GB</td><td>12 GB</td></tr>
+            <tr><td>Disk</td><td>6 GB</td><td>6 GB</td></tr>
+            <tr><td>Speed, few footnotes</td><td>0.3 s per page</td><td>0.18 s per page</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>You need Linux, Python 3.10 and an NVIDIA GPU with drivers for CUDA 12.4.</p>
+      <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone https://github.com/FootnotesExtractor/FootnotesExtractor.git
+cd FootnotesExtractor
+
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+python setup_models.py              # about 4 GB
+FOOTNOTES_INSECURE_COOKIES=1 python wsgi.py --host 127.0.0.1     # http://127.0.0.1:5002</code></pre></div>
+      <p>Surya downloads its own OCR weights (about 2.4 GB) the first time it runs. <code>FOOTNOTES_INSECURE_COOKIES=1</code> lets you log in over plain HTTP on your own machine; never set it on a server, where you should use HTTPS instead. The first account you register becomes the administrator, who creates all further accounts in <strong>Admin → Users</strong>. For a server, see the <a href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/deploy/DEPLOY.md">deployment notes</a>.</p>
+    </section>
+
+    <section id="api">
+      <h2>Use it over HTTP</h2>
+      <p>Everything the browser does is also available as an API. Create a key on your <strong>Profile</strong> page, then:</p>
+      <div class="code"><button class="copy" type="button">Copy</button><pre><code>import time
+import requests
+
+BASE = "http://127.0.0.1:5002"
+HEADERS = {"X-API-Key": "fnk_..."}
+
+with open("book.pdf", "rb") as f:
+    job = requests.post(f"{BASE}/api/v1/documents", headers=HEADERS,
+                        files={"file": ("book.pdf", f, "application/pdf")}).json()["job_id"]
+
+def status():
+    return requests.get(f"{BASE}/api/v1/documents/{job}", headers=HEADERS).json()["status"]
+
+while status() not in ("completed", "error"):
+    time.sleep(5)
+
+bib = requests.get(f"{BASE}/download/{job}", headers=HEADERS, params={"format": "bibtex_expanded"})
+with open("book.bib", "wb") as f:
+    f.write(bib.content)</code></pre></div>
+      <p>The <a href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/API.md">API reference</a> covers editing, groups, collections and the other export formats.</p>
+    </section>
+
+    <div class="rule" aria-hidden="true"></div>
+    <ol class="notes">
+      <li id="n1">M. Gogacz, <em>Problem istnienia Boga u Anzelma z Canterbury i problem prawdy u Henryka z Gandawy</em>, Katolicki Uniwersytet Lubelski, 1961 (CC BY-SA).</li>
+      <li id="n2">Maria V. Mavroudi, <em>A Byzantine Book on Dream Interpretation</em>, Brill, 2002, <a href="https://doi.org/10.1163/9789004473461">doi:10.1163/9789004473461</a> (CC BY).</li>
+    </ol>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p><strong>Licence.</strong> <a href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/LICENSE">GNU AGPL v3.0</a>. Surya's OCR weights have their own licence, with limits on commercial use: see Surya's documentation.</p>
+    <p><strong>Authors.</strong> Michał Ulaniuk, National Information Processing Institute, Poland. Emanuel Kulczycki, Humboldt-Universität zu Berlin; German Centre for Higher Education Research and Science Studies (DZHW). Przemysław Korytkowski, West Pomeranian University of Technology in Szczecin, Poland.</p>
+    <p><strong>Funding.</strong> Work co-financed by the state budget under the program of the Ministry of Education and Science called 'Science for Society II', project no. NdS-II/SP/0460/2023/01. We gratefully acknowledge Poland's high-performance computing infrastructure PLGrid and ACC Cyfronet AGH for providing computational facilities and support under computational grant no. PLG/2025/018513.</p>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.copy').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var text = btn.parentElement.querySelector('code').textContent;
+    var done = function (label) { btn.textContent = label; setTimeout(function () { btn.textContent = 'Copy'; }, 1600); };
+    try {
+      navigator.clipboard.writeText(text).then(function () { done('Copied'); }, function () { done('Select and copy'); });
+    } catch (e) { done('Select and copy'); }
+  });
+});
+</script>
+</body>
+</html>

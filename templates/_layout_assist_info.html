@@ -1,0 +1,118 @@
+{# What Layout Assist looks at, what it does and how much each signal counts.
+   Shown in the viewer's centered "i" pop-up and on /layout-assist. Every
+   number comes from the live configuration (_layout_assist_info_context in
+   app.py), so it can't drift from what the app actually does. #}
+<style>
+    .la-info h5 { color: #3730a3; font-size: 1.05rem; margin-bottom: 0.6rem; }
+    .la-info-section { padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 1px solid #e5e7eb; }
+    .la-info-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .la-info-features td:first-child { width: 28%; font-weight: 600; }
+    .la-info-num { font-variant-numeric: tabular-nums; }
+    .la-info-muted { color: #6b7280; font-size: 0.9rem; }
+    .la-info-dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
+    .la-info-dot--grey { background: #e5e7eb; border: 2px solid #d1d5db; }
+    .la-info-dot--passive { background: #fff; border: 2px solid #16a34a; }
+    .la-info-dot--active { background: #16a34a; border: 2px solid #15803d; }
+</style>
+{% macro n(v) %}<span class="la-info-num">{{ '%g' % v }}</span>{% endmacro %}
+{% macro secs(ms) %}<span class="la-info-num">{{ '%g' % ((ms / 1000) | round(1)) }}</span> s{% endmacro %}
+<div class="la-info">
+    <p class="text-muted">{{ t("Layout Assist learns each book's own footnote layout and citation style — from the book itself and from what you do in the viewer — and uses it to point out what may be wrong. It never changes a page you approved or a box you edited. The numbers on this page are the settings currently in effect.") }}</p>
+
+    <section class="la-info-section">
+        <h5><i class="fas fa-vector-square"></i> {{ t('Footnote boxes') }}</h5>
+        <p>{{ t('What it looks at, for every detected box:') }}</p>
+        <table class="table table-sm la-info-features">
+            <tr><td>{{ t('Left edge') }}</td><td>{{ t("Where the book's footnote column starts, learned separately for odd and even pages. The strongest signal, and it works for small footnotes too.") }}</td></tr>
+            <tr><td>{{ t('Bottom edge') }}</td><td>{{ t('Where footnotes end on the page. A box running below that is always wrong; ending above it is normal for stacked footnotes.') }}</td></tr>
+            <tr><td>{{ t('Right edge') }}</td><td>{{ t('Whether a box runs past the text column. A short box is never penalised.') }}</td></tr>
+            <tr><td>{{ t('Height') }}</td><td>{{ t('Box height against the number of text lines inside it.') }}</td></tr>
+            <tr><td>{{ t('Font size') }}</td><td>{{ t("Footnote type size against the book's body text, read from the PDF's text layer.") }}</td></tr>
+            <tr><td>{{ t('Rejections') }}</td><td>{{ t('The type size of boxes reviewers deleted in this book.') }}</td></tr>
+        </table>
+        <p class="la-info-muted">{{ t('It learns from detector boxes with confidence of at least {c}%, and from your approvals and edits, weighted as below.', c=(la_lp.tau_trust * 100) | round | int) }}</p>
+        <p class="mb-1">{{ t('What it does:') }}</p>
+        <ul>
+            <li><strong>{{ t('Check this box') }}</strong> — {{ t("a box that doesn't fit the book's layout (its confidence would drop below {c}%, or one edge is far off).", c=(la_lp.flag_below * 100) | round | int) }}</li>
+            <li><strong>{{ t('Missed footnote?') }}</strong> — {{ t('a candidate the detector left out (confidence at least {c}%) that fits the layout well (at least {a}% once the layout is taken into account), at most {m} per page.', c=(la_lp.rescue_min_conf * 100) | round | int, a=(la_lp.rescue_min_conf_adj * 100) | round | int, m=la_lp.rescue_max_per_page) }}</li>
+            <li><strong>{{ t('Box cut short?') }}</strong> — {{ t('such a candidate overlapping a box that is already there: extending the box covers both and reads the text again.') }}</li>
+            <li><strong>{{ t('Carrying your confirmations over') }}</strong> — {{ t("after each confirmation it adds the missed footnotes it is now confident about, only on pages you haven't approved. It never reshapes or deletes a box on its own.") }}</li>
+            <li><strong>{{ t('Ghost boxes') }}</strong> — {{ t("where you changed what the detector predicted, the original box stays faintly visible (dashed, washed out).") }}</li>
+        </ul>
+        <p class="la-info-muted mb-0">{{ t("Books uploaded before the detector's candidates were saved (around 8 September) can only be checked, not added to.") }}</p>
+    </section>
+
+    <section class="la-info-section">
+        <h5><i class="fas fa-tags"></i> {{ t('Citation labels') }}</h5>
+        <p>{{ t('What it looks at, for every labelled part of a reference:') }}</p>
+        <table class="table table-sm la-info-features">
+            <tr><td>{{ t('Shape') }}</td><td>{{ t('The character pattern: 9 = digit, A = capital letter, a = lowercase letter — e.g. "A. Aaa" for an initial and a surname.') }}</td></tr>
+            <tr><td>{{ t('Word before') }}</td><td>{{ t('The token right before it, e.g. "s." before page numbers.') }}</td></tr>
+            <tr><td>{{ t('Word after') }}</td><td>{{ t('The token right after it.') }}</td></tr>
+            <tr><td>{{ t('Word before + shape') }}</td><td>{{ t('Both together, e.g. a number after "t." is a volume.') }}</td></tr>
+            <tr><td>{{ t('Position') }}</td><td>{{ t('Which part of the reference it is (1st, 2nd, …), and roughly where in the reference it sits, each with its shape.') }}</td></tr>
+            <tr><td>{{ t('Length') }}</td><td>{{ t('How many tokens it has, and whether it is a number.') }}</td></tr>
+            <tr><td>{{ t('Exact text') }}</td><td>{{ t('The text itself, e.g. "op. cit.".') }}</td></tr>
+        </table>
+        <p class="la-info-muted">{{ t('All of it is kept separately per citation type (normal, ibidem, …). It switches on once a book has at least {n} labelled parts in {r} references.', n=la_np.n_min, r=la_np.min_refs) }}</p>
+        <p class="mb-1">{{ t('What it does:') }}</p>
+        <ul>
+            <li>{{ t("Suggests a different label when this book's own evidence disagrees with the stored one clearly, and on at least two features. It never relabels anything on its own.") }}</li>
+            <li>{{ t('Labels the viewer does not show (FootnoteMarker) are never suggested.') }}</li>
+        </ul>
+        <p class="la-info-muted mb-0">{{ t("It learns mostly from the model's own labels, so a mistake the model makes consistently across a book can be learned as the norm — keep or change a suggestion to correct it.") }}</p>
+    </section>
+
+    <section class="la-info-section">
+        <h5><i class="fas fa-clipboard-check"></i> {{ t('Consistency checks') }}</h5>
+        <p>{{ t('Where a part starts and ends follows one principle: the smallest span that still holds all of its information. Whitespace and , ; : at its edges never belong to it; a full stop belongs to it only when it closes an abbreviation ("op.cit.", "et al.", "J."), never after a number ("12." → "12"); a short letter token before a number ("pp.", "S.", "Bd.", "nr") is a prefix and stays outside ("pp. 210" → "210").') }}</p>
+        <p>{{ t('Each book also learns its own span rules from what you do: every part is reduced to its label and the shape of its neighbours ("aa." for "pp.", a full stop after a number, …). Where your edits and approvals disagree with the principle, they win — mark "pp. 210" whole as Pages and the rest of that book\'s "pp. N" parts follow. Once a rule has at least {n} of your actions behind it and none against it, it is applied to pages you have not approved on its own (undoable); before that it is a suggestion.', n=la_span.min_support) }}</p>
+        <p class="mb-1">{{ t('Other checks:') }}</p>
+        <ul class="mb-2">
+            <li>{{ t('A list of pages in one part is split into one part per page ("272, 281"); a range stays whole ("15-43").') }}</li>
+            <li>{{ t('A year with a letter ("2005a") is split into year and suffix; things that are not a year, a DOI or a web address, and backwards page ranges, are pointed out.') }}</li>
+        </ul>
+        <p class="la-info-muted mb-0">{{ t('Measured on the verified books before being switched on; rules that disagreed with them (for example about "op. cit.") are off.') }}</p>
+    </section>
+
+    <section class="la-info-section">
+        <h5><i class="fas fa-check-circle"></i> {{ t('Approving pages') }}</h5>
+        <ul>
+            <li><span class="la-info-dot la-info-dot--grey"></span><strong>{{ t('Not approved') }}</strong></li>
+            <li><span class="la-info-dot la-info-dot--passive"></span><strong>{{ t('Looked at') }}</strong> — {{ t('the page stayed on screen long enough, with nothing left open on it. Counts as a skim.') }}</li>
+            <li><span class="la-info-dot la-info-dot--active"></span><strong>{{ t('Approved by you') }}</strong> — {{ t('you clicked the round icon in the Layout Assist panel, or pressed S. Everything on the page counts as checked and any open items on it are marked as fine. Click (or S) again to withdraw; Ctrl+Z undoes it.') }}</li>
+            <li><strong>{{ t('Editing an element') }}</strong> — {{ t("counts for that element only, above a skim or an approval. Layout Assist never changes a page where you edited a box.") }}</li>
+        </ul>
+        <p class="mb-1">{{ t('How long a page must stay on screen to count as looked at:') }}</p>
+        {% if la_dwell_override is not none %}
+        <p class="la-info-muted">{{ t('Fixed at {ms} ms for every page on this server (testing setting).', ms=la_dwell_override) }}</p>
+        {% else %}
+        <p class="la-info-muted mb-1">{{ t('Your own timers: learned from the pages you approve, or set on your profile.') }} <a href="{{ url_for('auth.profile') }}">{{ t('My Profile') }}</a></p>
+        <ul class="mb-2">
+            <li>{{ t('Nothing detected on the page:') }} {{ secs(la_dwell_own.empty_ms) }}</li>
+            <li>{{ t('Otherwise:') }} {{ secs(la_dwell_own.base_ms) }} + {{ secs(la_dwell_own.per_footnote_ms) }} {{ t('per footnote') }} + {{ secs(la_dwell_own.per_100_chars_ms) }} {{ t('per 100 characters of text') }} + {{ secs(la_dwell_own.per_reference_ms) }} {{ t('per reference') }} + {{ secs(la_dwell_own.per_component_ms) }} {{ t('per labelled part') }}, {{ t('between {a} and {b} s', a='%g' % ((la_dwell_own.min_ms / 1000)|round(1)), b='%g' % ((la_dwell_own.max_ms / 1000)|round(1))) }}</li>
+        </ul>
+        <table class="table table-sm mb-0" style="max-width: 520px;">
+            {% for label, f, ms in la_floors %}
+            <tr><td>{{ t(label) }}</td><td class="text-end">{{ secs(ms) }}</td></tr>
+            {% endfor %}
+        </table>
+        {% endif %}
+    </section>
+
+    <section class="la-info-section">
+        <h5><i class="fas fa-balance-scale"></i> {{ t('How much each signal counts') }}</h5>
+        <table class="table table-sm" style="max-width: 620px;">
+            <thead><tr><th></th><th class="text-end">{{ t('Footnote boxes') }}</th><th class="text-end">{{ t('Citation labels') }}</th></tr></thead>
+            <tr><td>{{ t("The model's own output") }}</td><td class="text-end">{{ n(la_weights.layout.model) }}</td><td class="text-end">{{ n(la_weights.labels.model) }}</td></tr>
+            <tr><td>{{ t('Page looked at') }}</td><td class="text-end">{{ n(la_weights.layout.page_passive) }}</td><td class="text-end">{{ n(la_weights.labels.page_passive) }}</td></tr>
+            <tr><td>{{ t('Page approved by you') }}</td><td class="text-end">{{ n(la_weights.layout.page_active) }}</td><td class="text-end">{{ n(la_weights.labels.page_active) }}</td></tr>
+            <tr><td>{{ t('Element confirmed ("Box is fine", "Keep …", accepted unchanged)') }}</td><td class="text-end">{{ n(la_weights.layout.element_confirmed) }}</td><td class="text-end">{{ n(la_weights.labels.element_confirmed) }}</td></tr>
+            <tr><td>{{ t('Element added or edited') }}</td><td class="text-end">{{ n(la_weights.layout.element_edited) }}</td><td class="text-end">{{ n(la_weights.labels.element_edited) }}</td></tr>
+        </table>
+        <p class="la-info-muted mb-0">{{ t('Every approval and edit is recorded with how long the page was on screen, what the page held (footnotes, text length, references, labelled parts) and how many elements you touched.') }}
+            {{ t('The time a page has to stay on screen to count as looked at is linked to your own activity: it is learned from the pages you approve, separately for pages with nothing detected and pages with footnotes, and you can see it or set it yourself on your profile.') }}
+            <a href="{{ url_for('auth.profile') }}">{{ t('My Profile') }}</a>.
+            {{ t('The weights in this table are the same for everyone for now, and can later be learned from how people actually review in the same way.') }}</p>
+    </section>
+</div>

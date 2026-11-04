@@ -1,0 +1,49 @@
+<!-- CSRF token, included in every full-page template's <head> individually
+     (not relied on via _nav.html's inclusion — login.html/register.html
+     import just the language_switcher macro from _nav.html rather than
+     including the whole file, which wouldn't pull this in) so it's
+     guaranteed present pre-login too, where the login/register forms
+     themselves need it most.
+
+       1. Every <form method="post"> on the page gets a hidden csrf_token
+          field auto-appended once the DOM is ready.
+       2. window.fetch is wrapped so every same-origin POST/PUT/PATCH/DELETE
+          call automatically carries the X-CSRFToken header, covering the
+          app's own inline-<script> fetch() calls (footnote edits, bulk
+          actions, admin toggles, etc.) without touching each call site.
+
+     See app.py's CSRFProtect wiring / auth.enforce_csrf for the server side
+     — API-key-authenticated requests (external scripts) are exempt there,
+     this token is only ever needed for session-cookie/browser requests. -->
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<script>
+(function () {
+    var token = document.querySelector('meta[name="csrf-token"]').content;
+
+    var originalFetch = window.fetch;
+    window.fetch = function (input, init) {
+        init = init || {};
+        var method = (init.method || 'GET').toUpperCase();
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].indexOf(method) !== -1) {
+            init.headers = new Headers(init.headers || {});
+            if (!init.headers.has('X-CSRFToken')) {
+                init.headers.set('X-CSRFToken', token);
+            }
+        }
+        return originalFetch.call(this, input, init);
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('form').forEach(function (form) {
+            var method = (form.getAttribute('method') || 'GET').toUpperCase();
+            if (method === 'POST' && !form.querySelector('input[name="csrf_token"]')) {
+                var field = document.createElement('input');
+                field.type = 'hidden';
+                field.name = 'csrf_token';
+                field.value = token;
+                form.appendChild(field);
+            }
+        });
+    });
+})();
+</script>

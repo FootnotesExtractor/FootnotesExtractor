@@ -1,0 +1,70 @@
+{# Shared shell for 404.html / 500.html.
+
+   Deliberately self-contained: no _nav.html (it reads g.user, which may be
+   unset when the failure happened before/inside a before_request), no CDN
+   stylesheets, no CSRF partial. An error page that depends on the things that
+   might be broken is how this app ended up returning a raw 500 for every 404 —
+   the handlers rendered templates that did not exist, so the handler itself
+   raised. Keep this page's dependencies at zero.
+
+   t() is safe here: it falls back to English when g.lang is missing entirely
+   (see translations.t). #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% endblock %} - FootnotesExtractor</title>
+    <link rel="icon" href="/favicon.ico">
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            color: #212529;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .error-card {
+            max-width: 480px;
+            margin: 24px;
+            padding: 32px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .error-code {
+            font-size: 56px;
+            font-weight: bold;
+            line-height: 1;
+            color: {% block accent %}#0d6efd{% endblock %};
+            margin-bottom: 8px;
+        }
+        .error-title { font-size: 20px; font-weight: 600; margin-bottom: 10px; }
+        .error-text  { font-size: 14px; color: #6c757d; margin-bottom: 22px; }
+        .error-home {
+            display: inline-block;
+            padding: 8px 18px;
+            border-radius: 6px;
+            background: #0d6efd;
+            color: #fff;
+            font-size: 14px;
+            text-decoration: none;
+        }
+        .error-home:hover { background: #0b5ed7; }
+    </style>
+</head>
+<body>
+    <div class="error-card">
+        <div class="error-code">{% block code %}{% endblock %}</div>
+        <div class="error-title">{% block heading %}{% endblock %}</div>
+        <div class="error-text">{% block message %}{% endblock %}</div>
+        {# Literal "/" rather than url_for: nothing on this page should be able
+           to raise, and the app is always served from the domain root. #}
+        <a class="error-home" href="/">{{ t('Back to home page') }}</a>
+    </div>
+</body>
+</html>

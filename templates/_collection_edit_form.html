@@ -1,0 +1,13 @@
+<!-- Inline, initially-collapsed rename/description form for one collection
+     on collections.html. Expects `col` (a collections row) in scope; posts to
+     the same edit_collection route as collection_detail.html's form, with
+     return_to=list so the redirect comes back to this page. -->
+<div class="collapse" id="editCollection{{ col['id'] }}">
+    <form method="post" action="{{ url_for('auth.edit_collection', collection_id=col['id']) }}" class="d-flex flex-wrap gap-2 mt-2 mb-3">
+        <input type="hidden" name="return_to" value="list">
+        <input type="text" class="form-control form-control-sm" style="flex:2 1 180px;" name="name" value="{{ col['name'] }}" placeholder="{{ t('Collection name') }}" required>
+        <input type="text" class="form-control form-control-sm" style="flex:3 1 220px;" name="description" value="{{ col['description'] or '' }}" placeholder="{{ t('Short description (optional)') }}">
+        <button type="submit" class="btn btn-sm btn-primary text-nowrap">{{ t('Save') }}</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" data-bs-toggle="collapse" data-bs-target="#editCollection{{ col['id'] }}">{{ t('Cancel') }}</button>
+    </form>
+</div>

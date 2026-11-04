@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% include '_csrf.html' %}
+    <title>{{ t('My Groups') }} - FootnotesExtractor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: white;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    {% include '_nav.html' %}
+    <div class="container my-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="text-center mb-4">
+                    <h2 class="text-primary"><i class="fas fa-users"></i> {{ t('My Groups') }}</h2>
+                    <p class="text-muted">{{ t('Create a group to share processed publications and their edits with others.') }}</p>
+                </div>
+
+                {% with messages = get_flashed_messages() %}
+                    {% if messages %}
+                        {% for message in messages %}
+                            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                                <i class="fas fa-exclamation-triangle"></i> {{ t(message) }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="mb-3"><i class="fas fa-plus"></i> {{ t('Create a Group') }}</h5>
+                        <form method="post" action="{{ url_for('auth.create_group') }}" class="d-flex gap-2">
+                            <input type="text" class="form-control" name="name" placeholder="{{ t('Group name') }}" required>
+                            <button type="submit" class="btn btn-primary text-nowrap">{{ t('Create') }}</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="mb-3"><i class="fas fa-list"></i> {{ t('Your Groups') }}</h5>
+                        {% if groups %}
+                            <div class="list-group">
+                                {% for grp in groups %}
+                                <a href="{{ url_for('auth.group_detail', group_id=grp['id']) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                                    <span><i class="fas fa-users me-2"></i>{{ grp['name'] }}</span>
+                                    <i class="fas fa-chevron-right text-muted"></i>
+                                </a>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted mb-0">{{ t("You're not in any groups yet.") }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

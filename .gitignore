@@ -1,0 +1,36 @@
+# Secrets
+.secret_key
+.env
+*.pem
+*.key
+
+# Your data: accounts, uploaded documents, results
+app.db
+app.db.*
+*.sqlite
+*.sqlite3
+uploads/
+results/
+backups/
+
+# Model weights: see setup_models.py
+models/
+
+# Logs
+*.log
+*.log.gz
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% include '_csrf.html' %}
+    <title>{{ t('My Profile') }} - FootnotesExtractor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: white;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        /* standard / learned values on the page-timer sliders. The bar is drawn
+           here (.dwell-rail) under the marks, and the slider's own track is
+           transparent, so its thumb (1rem) covers a mark at the same value; the
+           marks (12px) are shorter than the thumb. Positions follow the thumb's
+           centre: 0.5rem in from each end. */
+        .dwell-track { position: relative; padding-top: 14px; }
+        .dwell-track.has-raised { padding-top: 26px; }
+        .dwell-track .form-range { position: relative; z-index: 2; display: block; background: transparent; }
+        .dwell-track .form-range::-webkit-slider-runnable-track { background: transparent; }
+        .dwell-track .form-range::-moz-range-track { background: transparent; }
+        .dwell-rail { position: absolute; left: 0; right: 0; bottom: 0.5rem; height: 0.5rem; border-radius: 1rem; background: #dee2e6; z-index: 0; }
+        .dwell-mark {
+            position: absolute; bottom: 0.75rem; width: 2px; height: 12px; border-radius: 1px; z-index: 1;
+            left: calc(0.5rem + var(--p) * (100% - 1rem)); transform: translate(-50%, 50%);
+        }
+        .dwell-mark-label {
+            position: absolute; bottom: calc(0.75rem + 8px); left: calc(0.5rem + var(--p) * (100% - 1rem));
+            transform: translateX(-50%); font-size: 10px; line-height: 1; white-space: nowrap; z-index: 1;
+        }
+        .dwell-mark-label.raised { bottom: calc(0.75rem + 20px); }
+        .dwell-mark--standard { background: #9ca3af; }
+        .dwell-mark--learned { background: #0d6efd; }
+        .dwell-mark-label--standard { color: #6b7280; }
+        .dwell-mark-label--learned { color: #0d6efd; }
+        .new-key-box {
+            background: #0f172a;
+            color: #e2f0e2;
+            border-radius: 8px;
+            padding: 14px 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            word-break: break-all;
+            user-select: all;
+        }
+    </style>
+</head>
+<body>
+    {% include '_nav.html' %}
+    <div class="container my-5">
+        <div class="row justify-content-center">
+            <div class="col-md-9">
+                <div class="text-center mb-4">
+                    <h2 class="text-primary"><i class="fas fa-id-badge"></i> {{ t('My Profile') }}</h2>
+                    <p class="text-muted">{{ t('Account details, password, and API keys for') }} <strong>{{ g.user['username'] }}</strong>.</p>
+                </div>
+
+                {% with messages = get_flashed_messages(category_filter=['api-key']) %}
+                    {% if messages %}
+                        {% for raw_key in messages %}
+                            <div class="alert alert-success" role="alert">
+                                <strong><i class="fas fa-check-circle"></i> {{ t("New API key created — copy it now, it won't be shown again:") }}</strong>
+                                <div class="new-key-box mt-2">{{ raw_key }}</div>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                {% with messages = get_flashed_messages(category_filter=['message']) %}
+                    {% if messages %}
+                        {% for message in messages %}
+                            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                                <i class="fas fa-exclamation-triangle"></i> {{ t(message) }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="mb-3"><i class="fas fa-user"></i> {{ t('Profile Info') }}</h5>
+                        <form method="post" action="{{ url_for('auth.update_profile') }}" class="row g-2 align-items-end">
+                            <div class="col-sm-3">
+                                <label class="form-label small mb-1">{{ t('First name') }} <span class="text-muted">({{ t('optional') }})</span></label>
+                                <input type="text" class="form-control form-control-sm" name="first_name" value="{{ g.user['first_name'] or '' }}">
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label small mb-1">{{ t('Last name') }} <span class="text-muted">({{ t('optional') }})</span></label>
+                                <input type="text" class="form-control form-control-sm" name="last_name" value="{{ g.user['last_name'] or '' }}">
+                            </div>
+                            <div class="col-sm-4">
+                                <label class="form-label small mb-1">{{ t('E-mail address') }} <span class="text-muted">({{ t('optional') }})</span></label>
+                                <input type="email" class="form-control form-control-sm" name="email" value="{{ g.user['email'] or '' }}">
+                            </div>
+                            <div class="col-sm-2 d-grid">
+                                <button type="submit" class="btn btn-outline-primary btn-sm">{{ t('Save') }}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="mb-3"><i class="fas fa-lock"></i> {{ t('Change Password') }}</h5>
+                        <form method="post" action="{{ url_for('auth.change_password') }}" class="row g-2 align-items-end">
+                            <div class="col-sm-4">
+                                <label class="form-label small mb-1">{{ t('Current password') }}</label>
+                                <input type="password" class="form-control form-control-sm" name="current_password" required>
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label small mb-1">{{ t('New password') }}</label>
+                                <input type="password" class="form-control form-control-sm" name="new_password" required minlength="8">
+                            </div>
+                            <div class="col-sm-3">
+                                <label class="form-label small mb-1">{{ t('Confirm new password') }}</label>
+                                <input type="password" class="form-control form-control-sm" name="confirm_new_password" required minlength="8">
+                            </div>
+                            <div class="col-sm-2 d-grid">
+                                <button type="submit" class="btn btn-outline-primary btn-sm">{{ t('Update') }}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                {# Layout Assist's page timers: only with the feature (features.py). #}
+                {% if feature('layout_assist') %}
+                {% set rp = review_params_for(g.user['id']) %}
+                {% set timers = [
+                    ('empty_ms', t('Page with nothing detected')),
+                    ('base_ms', t('Page with footnotes: base time')),
+                    ('per_footnote_ms', t('+ per footnote')),
+                    ('per_100_chars_ms', t('+ per 100 characters of text')),
+                    ('per_reference_ms', t('+ per reference')),
+                    ('per_component_ms', t('+ per labelled part')),
+                    ('min_ms', t('Never shorter than')),
+                    ('max_ms', t('Never longer than')),
+                ] %}
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="mb-1"><i class="fas fa-stopwatch"></i> {{ t('Layout Assist: time on a page') }}</h5>
+                        <p class="text-muted small">{{ t('How long a page has to stay on your screen before Layout Assist counts it as looked at. The timers are learned from the pages you approve, or you can set them yourself.') }} <a href="{{ url_for('layout_assist_info') }}">{{ t('How Layout Assist works') }}</a></p>
+                        <form method="post" action="{{ url_for('save_review_settings') }}" id="dwellForm">
+                            {% set basis_lines = [] %}
+                            {% for group, label in [('empty', t('Pages with nothing detected')), ('content', t('Pages with footnotes'))] %}
+                                {% set b = rp.basis[group] %}
+                                {% set _ = basis_lines.append(label ~ ': ' ~ (t('learned from your {n} approvals', n=b.approvals) if b.ratio is defined
+                                                                          else t('not enough approvals yet ({n} of {needed}), standard timers', n=b.approvals, needed=b.needed))) %}
+                            {% endfor %}
+                            {% set _ = basis_lines.append(t('Grey line on a bar: the standard value. Blue line: your learned value.')) %}
+                            <div class="d-flex align-items-center gap-1 mb-3">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" role="switch" name="dwell_learned" value="1" id="dwellLearned" {% if not rp.own %}checked{% endif %}>
+                                    <label class="form-check-label small fw-semibold" for="dwellLearned">{{ t('Use values learned from my activity') }}</label>
+                                </div>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-muted" id="dwellInfo" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="right"
+                                        title="{{ basis_lines|join('<br>') }}" aria-label="{{ basis_lines|join(' ') }}"><i class="fas fa-info-circle"></i></button>
+                            </div>
+                            {% for key, label in timers %}
+                            {% set lo, hi, step = rp.bounds[key] %}
+                            {% set group_learned = (rp.basis.empty if key == 'empty_ms' else rp.basis.content).ratio is defined %}
+                            <div class="row align-items-center g-2 mb-1 small">
+                                <label class="col-sm-4 col-form-label py-0" for="dwell_{{ key }}">{{ label }}</label>
+                                <div class="col-sm-6">
+                                    {% set show_learned = rp.learned and group_learned %}
+                                    {% set same = show_learned and rp.learned[key] == rp.standard[key] %}
+                                    <div class="dwell-track">
+                                        <div class="dwell-rail"></div>
+                                        <span class="dwell-mark dwell-mark--standard" style="--p: {{ ((rp.standard[key] - lo) / (hi - lo)) }}"></span>
+                                        {% if not same %}<span class="dwell-mark-label dwell-mark-label--standard" style="--p: {{ ((rp.standard[key] - lo) / (hi - lo)) }}">{{ '%g' % ((rp.standard[key] / 1000)|round(2)) }} s</span>{% endif %}
+                                        {% if show_learned %}
+                                        <span class="dwell-mark dwell-mark--learned" style="--p: {{ ((rp.learned[key] - lo) / (hi - lo)) }}"></span>
+                                        <span class="dwell-mark-label dwell-mark-label--learned" style="--p: {{ ((rp.learned[key] - lo) / (hi - lo)) }}">{{ '%g' % ((rp.learned[key] / 1000)|round(2)) }} s</span>
+                                        {% endif %}
+                                        <input type="range" class="form-range dwell-slider" id="dwell_{{ key }}" name="dwell_{{ key }}" data-key="{{ key }}" min="{{ lo }}" max="{{ hi }}" step="{{ step }}" value="{{ rp.dwell[key]|round|int }}">
+                                    </div>
+                                </div>
+                                <div class="col-sm-2 text-end fw-semibold"><output id="out_{{ key }}"></output></div>
+                            </div>
+                            {% endfor %}
+                            <div class="small text-muted mt-2" id="dwellExample"></div>
+                            <div class="d-flex gap-2 mt-2">
+                                <button type="button" class="btn btn-link btn-sm ps-0" id="dwellSetStandard">{{ t('Set to standard timers') }}</button>
+                                <button type="button" class="btn btn-link btn-sm" id="dwellSetLearned">{{ t('Set to learned timers') }}</button>
+                                <span class="small align-self-center" id="dwellSaved" aria-live="polite"></span>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <script>
+                (function () {
+                    const LEARNED = {{ (rp.learned or rp.standard)|tojson }};
+                    const STANDARD = {{ rp.standard|tojson }};
+                    const form = document.getElementById('dwellForm');
+                    const toggle = document.getElementById('dwellLearned');
+                    const sliders = [...form.querySelectorAll('.dwell-slider')];
+                    const fmt = ms => (ms < 1000 ? (ms / 1000).toFixed(2) : (ms / 1000).toFixed(1)) + ' s';
+                    const values = () => Object.fromEntries(sliders.map(s => [s.dataset.key, parseFloat(s.value)]));
+                    // the same formula as review_signals.dwell_floor_ms
+                    const floor = (p, f) => {
+                        if (!f.footnotes) return p.empty_ms;
+                        const ms = p.base_ms + p.per_footnote_ms * f.footnotes + p.per_100_chars_ms * f.ocr_chars / 100
+                            + p.per_reference_ms * f.references + p.per_component_ms * f.components;
+                        return Math.min(Math.max(ms, p.min_ms), p.max_ms);
+                    };
+                    const render = () => {
+                        sliders.forEach(s => { document.getElementById('out_' + s.dataset.key).textContent = fmt(parseFloat(s.value)); });
+                        const v = values();
+                        document.getElementById('dwellExample').textContent = {{ t('With these timers: a page with nothing detected after {a}, a typical page (3 footnotes, 600 characters, 4 references, 20 parts) after {b}.')|tojson }}
+                            .replace('{a}', fmt(floor(v, {}))).replace('{b}', fmt(floor(v, { footnotes: 3, ocr_chars: 600, references: 4, components: 20 })));
+                    };
+                    const set = p => sliders.forEach(s => { s.value = Math.round(p[s.dataset.key]); });
+                    const sync = () => {
+                        if (toggle.checked) set(LEARNED);
+                        sliders.forEach(s => { s.disabled = toggle.checked; });
+                        render();
+                    };
+                    // Every change saves itself (no Save button): the switch, a slider
+                    // when it is let go, and the two buttons.
+                    const status = document.getElementById('dwellSaved');
+                    let saveTimer = null;
+                    const save = () => {
+                        clearTimeout(saveTimer);
+                        saveTimer = setTimeout(async () => {
+                            try {
+                                const resp = await fetch({{ url_for('save_review_settings_api')|tojson }}, { method: 'POST', body: new FormData(form) });
+                                if (!resp.ok) throw new Error(resp.status);
+                                status.className = 'small align-self-center text-success';
+                                status.textContent = {{ t('Saved')|tojson }};
+                            } catch (e) {
+                                status.className = 'small align-self-center text-danger';
+                                status.textContent = {{ t('Could not save')|tojson }};
+                            }
+                        }, 300);
+                    };
+                    form.addEventListener('submit', e => { e.preventDefault(); save(); });
+                    toggle.addEventListener('change', () => { sync(); save(); });
+                    sliders.forEach(s => {
+                        s.addEventListener('input', () => { render(); status.textContent = ''; });
+                        s.addEventListener('change', save);
+                    });
+                    // Standard timers are not the learned ones, so the switch goes off;
+                    // the learned ones are copied into the sliders as they are now.
+                    document.getElementById('dwellSetStandard').addEventListener('click', () => {
+                        toggle.checked = false; sync(); set(STANDARD); render(); save();
+                    });
+                    document.getElementById('dwellSetLearned').addEventListener('click', () => {
+                        if (!toggle.checked) { set(LEARNED); render(); save(); }
+                    });
+                    // The two values above a bar: the learned one moves up a line when
+                    // it would overlap the standard one.
+                    const placeLabels = () => form.querySelectorAll('.dwell-track').forEach(track => {
+                        const std = track.querySelector('.dwell-mark-label--standard');
+                        const own = track.querySelector('.dwell-mark-label--learned');
+                        if (!own) return;
+                        own.classList.remove('raised');
+                        let raise = false;
+                        if (std) {
+                            const a = std.getBoundingClientRect(), b = own.getBoundingClientRect();
+                            raise = a.left < b.right + 4 && b.left < a.right + 4;
+                        }
+                        own.classList.toggle('raised', raise);
+                        track.classList.toggle('has-raised', raise);
+                    });
+                    window.addEventListener('resize', placeLabels);
+                    sync();
+                    placeLabels();
+                    window.addEventListener('load', () => {
+                        if (window.bootstrap) new bootstrap.Tooltip(document.getElementById('dwellInfo'));
+                    });
+                })();
+                </script>
+                {% endif %}
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="mb-3"><i class="fas fa-key"></i> {{ t('API Keys') }}</h5>
+                        <p class="text-muted small">{{ t("Use an API key to authenticate scripts against this app's JSON API instead of logging in with a browser. Send it as either") }} <code>Authorization: Bearer &lt;key&gt;</code> {{ t('or') }} <code>X-API-Key: &lt;key&gt;</code>.</p>
+                        <form method="post" action="{{ url_for('auth.create_api_key') }}" class="d-flex gap-2 mb-4">
+                            <input type="text" class="form-control" name="name" placeholder="{{ t('What\'s this key for? (e.g. \'upload script\')') }}" required>
+                            <button type="submit" class="btn btn-primary text-nowrap">{{ t('Generate') }}</button>
+                        </form>
+
+                        {% if keys %}
+                        <table class="table align-middle">
+                            <thead>
+                                <tr><th>{{ t('Name') }}</th><th>{{ t('Key') }}</th><th>{{ t('Created') }}</th><th>{{ t('Last used') }}</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                {% for key in keys %}
+                                <tr class="{{ 'text-muted' if key['revoked_at'] else '' }}">
+                                    <td>{{ key['name'] }}</td>
+                                    <td><code>{{ key['key_prefix'] }}…</code></td>
+                                    <td class="small">{{ key['created_at'] | human_date }}</td>
+                                    <td class="small">{{ key['last_used_at'] | human_date if key['last_used_at'] else t('Never') }}</td>
+                                    <td class="text-end">
+                                        {% if key['revoked_at'] %}
+                                            <span class="badge bg-secondary">{{ t('Revoked') }}</span>
+                                        {% else %}
+                                            <form method="post" action="{{ url_for('auth.revoke_api_key', key_id=key['id']) }}" onsubmit="return confirm({{ t('Revoke the key \'{name}\'? Anything using it will stop working immediately.', name=key['name']) | tojson }});">
+                                                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fas fa-ban"></i> {{ t('Revoke') }}</button>
+                                            </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% else %}
+                        <p class="text-muted mb-0">{{ t("You haven't generated any API keys yet.") }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

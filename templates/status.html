@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% include '_csrf.html' %}
+    <title>{{ t('Processing Status') }} - FootnotesExtractor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: white;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .progress {
+            height: 20px;
+            border-radius: 10px;
+        }
+        .progress-bar {
+            background: #007bff;
+        }
+        .status-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin: 0 auto 20px;
+        }
+        .status-processing {
+            background: #ffc107;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+        .status-queued {
+            background: #17a2b8;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+        .status-completed {
+            background: #28a745;
+            color: white;
+        }
+        .status-error {
+            background: #dc3545;
+            color: white;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .btn-primary {
+            background: #007bff;
+            border: #007bff;
+            border-radius: 6px;
+        }
+        .stats-card {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    {% include '_nav.html' %}
+    <div class="container my-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <!-- Header -->
+                <div class="text-center mb-4">
+                    <h2 class="text-primary">
+                        <i class="fas fa-tasks"></i>
+                        {{ t('Processing Status') }}
+                    </h2>
+                    <p class="text-muted">{{ t('Job ID:') }} {{ job_id[:8] }}...</p>
+                </div>
+
+                <!-- Status Card -->
+                <div class="card">
+                    <div class="card-body p-4 text-center">
+                        <!-- Status Icon -->
+                        <div id="statusIcon" class="status-icon status-processing">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+
+                        <!-- Status Text -->
+                        <h4 id="statusTitle" class="mb-3">{{ t('Processing...') }}</h4>
+                        <p id="statusMessage" class="text-muted mb-4">{{ t('Initializing...') }}</p>
+
+                        <!-- Progress Bar -->
+                        <div class="progress mb-4">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%"></div>
+                        </div>
+
+                        <!-- Processing Time -->
+                        <p id="processingTime" class="small text-muted"></p>
+
+                        <!-- Results Summary (hidden initially) -->
+                        <div id="resultsSummary" style="display: none;">
+                            <div class="row text-center">
+                                <div class="col-6 col-lg-2">
+                                    <div class="stats-card">
+                                        <h5 id="totalFootnotes" class="mb-1">0</h5>
+                                        <small class="text-muted">{{ t('Footnotes') }}</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-lg-2">
+                                    <div class="stats-card">
+                                        <h5 id="totalReferences" class="mb-1">0</h5>
+                                        <small class="text-muted">{{ t('References') }}</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-lg-2">
+                                    <div class="stats-card">
+                                        <h5 id="totalComponents" class="mb-1">0</h5>
+                                        <small class="text-muted">{{ t('Components') }}</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-lg-2">
+                                    <div class="stats-card">
+                                        <h5 id="ibidemFootnotes" class="mb-1">0</h5>
+                                        <small class="text-muted">{{ t('Ibidem') }}</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-lg-2">
+                                    <div class="stats-card">
+                                        <h5 id="inferredComponents" class="mb-1">0</h5>
+                                        <small class="text-muted">{{ t('Inferred') }}</small>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-lg-2">
+                                    <div class="stats-card">
+                                        <h5 id="processingTimeResult" class="mb-1">0s</h5>
+                                        <small class="text-muted">{{ t('Time') }}</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div id="actionButtons" class="mt-4" style="display: none;">
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                                <a id="interactiveBtn" href="#" class="btn btn-success btn-lg me-md-2">
+                                    <i class="fas fa-eye"></i>
+                                    {{ t('Interactive Viewer') }}
+                                </a>
+                                <a id="structuredBtn" href="#" class="btn btn-outline-primary btn-lg me-md-2">
+                                    <i class="fas fa-list"></i>
+                                    {{ t('Structured Data') }}
+                                </a>
+                                <a id="downloadBtn" href="#" class="btn btn-outline-secondary btn-lg">
+                                    <i class="fas fa-download"></i>
+                                    {{ t('Download JSON') }}
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- Error Details (hidden initially) -->
+                        <div id="errorDetails" class="alert alert-danger mt-4" style="display: none;">
+                            <h6><i class="fas fa-exclamation-triangle"></i> {{ t('Error Details') }}</h6>
+                            <p id="errorMessage" class="mb-0"></p>
+                        </div>
+
+                        <!-- Navigation -->
+                        <div class="mt-4">
+                            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                                <i class="fas fa-upload"></i>
+                                {{ t('Upload Another PDF') }}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Processing Log (for debugging) -->
+                <div id="processingLog" class="card mt-4" style="display: none;">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-terminal"></i>
+                            {{ t('Processing Log') }}
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <pre id="logContent" class="small text-muted mb-0"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const jobId = '{{ job_id }}';
+        let statusInterval;
+        const I18N = {
+            elapsedTime: {{ t('Elapsed time:') | tojson }},
+            processingTime: {{ t('Processing time:') | tojson }},
+            processingCompleted: {{ t('Processing Completed!') | tojson }},
+            processingFailed: {{ t('Processing Failed') | tojson }},
+            waitingInQueue: {{ t('Waiting in queue...') | tojson }},
+            processing: {{ t('Processing...') | tojson }},
+        };
+
+        function updateStatus() {
+            fetch(`/api/status/${jobId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const statusIcon = document.getElementById('statusIcon');
+                    const statusTitle = document.getElementById('statusTitle');
+                    const statusMessage = document.getElementById('statusMessage');
+                    const progressBar = document.getElementById('progressBar');
+                    const processingTime = document.getElementById('processingTime');
+
+                    // Update progress bar
+                    progressBar.style.width = data.progress + '%';
+                    progressBar.textContent = data.progress + '%';
+
+                    // Update status message
+                    statusMessage.textContent = data.step;
+
+                    // Update processing time
+                    if (data.elapsed_time) {
+                        processingTime.textContent = `${I18N.elapsedTime} ${data.elapsed_time}s`;
+                    } else if (data.processing_time) {
+                        processingTime.textContent = `${I18N.processingTime} ${data.processing_time}s`;
+                    }
+
+                    // Handle different status states
+                    if (data.status === 'completed') {
+                        // Completed state
+                        statusIcon.className = 'status-icon status-completed';
+                        statusIcon.innerHTML = '<i class="fas fa-check"></i>';
+                        statusTitle.textContent = I18N.processingCompleted;
+                        
+                        // Show results summary
+                        if (data.summary) {
+                            document.getElementById('totalFootnotes').textContent = data.summary.total_footnotes;
+                            document.getElementById('totalReferences').textContent = data.summary.total_references;
+                            document.getElementById('totalComponents').textContent = data.summary.total_components;
+                            document.getElementById('ibidemFootnotes').textContent = data.summary.ibidem_footnotes || 0;
+                            document.getElementById('inferredComponents').textContent = data.summary.inferred_components || 0;
+                            document.getElementById('processingTimeResult').textContent = data.summary.processing_time + 's';
+                            document.getElementById('resultsSummary').style.display = 'block';
+                        }
+
+                        // Show action buttons
+                        document.getElementById('interactiveBtn').href = `/viewer/${jobId}`;
+                        document.getElementById('structuredBtn').href = `/results/${jobId}`;
+                        document.getElementById('downloadBtn').href = `/download/${jobId}`;
+                        document.getElementById('actionButtons').style.display = 'block';
+
+                        // Remove progress bar animation
+                        progressBar.classList.remove('progress-bar-animated');
+
+                        // Stop polling
+                        clearInterval(statusInterval);
+
+                    } else if (data.status === 'error') {
+                        // Error state
+                        statusIcon.className = 'status-icon status-error';
+                        statusIcon.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                        statusTitle.textContent = I18N.processingFailed;
+                        
+                        // Show error details
+                        if (data.error) {
+                            document.getElementById('errorMessage').textContent = data.error;
+                            document.getElementById('errorDetails').style.display = 'block';
+                        }
+
+                        // Remove progress bar animation
+                        progressBar.classList.remove('progress-bar-animated');
+                        progressBar.classList.add('bg-danger');
+
+                        // Stop polling
+                        clearInterval(statusInterval);
+
+                    } else if (data.status === 'queued') {
+                        statusIcon.className = 'status-icon status-queued';
+                        statusIcon.innerHTML = '<i class="fas fa-hourglass-half"></i>';
+                        statusTitle.textContent = I18N.waitingInQueue;
+                    } else {
+                        // Processing state (keep current styling)
+                        statusIcon.className = 'status-icon status-processing';
+                        statusIcon.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                        statusTitle.textContent = I18N.processing;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching status:', error);
+                    // Continue polling even on error
+                });
+        }
+
+        // Start status polling
+        updateStatus(); // Initial call
+        statusInterval = setInterval(updateStatus, 2000); // Poll every 2 seconds
+
+        // Stop polling when page is not visible
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                clearInterval(statusInterval);
+            } else {
+                statusInterval = setInterval(updateStatus, 2000);
+            }
+        });
+    </script>
+</body>
+</html>

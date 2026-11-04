@@ -1,0 +1,63 @@
+<!-- Language switcher — a plain POST form per option rather than a link, since
+     switching mutates state (account column or session, see auth.set_language)
+     and GETs shouldn't have side effects. `next` round-trips the current URL
+     (path + query string) so switching languages doesn't lose your place. -->
+{% macro language_switcher() %}
+<div class="dropdown d-inline-block">
+    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="fas fa-globe"></i> {{ LANG_NAMES[g.lang] }}
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+        {% for code, name in LANG_NAMES.items() %}
+        <li>
+            <form method="post" action="{{ url_for('set_language') }}">
+                <input type="hidden" name="language" value="{{ code }}">
+                <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+                <button type="submit" class="dropdown-item{% if g.lang == code %} active{% endif %}">{{ name }}</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endmacro %}
+
+<nav class="navbar navbar-expand navbar-light bg-light border-bottom mb-3 px-3">
+    <a class="navbar-brand" href="{{ url_for('index') }}">
+        <i class="fas fa-file-pdf text-danger"></i> FootnotesExtractor
+    </a>
+    <div class="ms-auto d-flex align-items-center gap-2">
+        {% if g.user %}
+            <span class="text-muted small me-2">
+                <i class="fas fa-user"></i> {{ g.user['username'] }}
+                <span class="badge bg-secondary">{{ g.user['role'] }}</span>
+            </span>
+            <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-home"></i> {{ t('Home') }}</a>
+            <a href="{{ url_for('auth.list_groups') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-users"></i> {{ t('My Groups') }}</a>
+            <!-- Merged with the old separate History page — url_for('history')
+                 now just redirects here, kept working for the few remaining
+                 internal links that still use it (see app.py's history()). -->
+            <a href="{{ url_for('auth.list_collections') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-folder-open"></i> {{ t('Collections') }}</a>
+            <!-- Password change + API keys now live here too — see auth.profile. -->
+            <a href="{{ url_for('auth.profile') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-id-badge"></i> {{ t('Profile') }}</a>
+            {% if g.user['role'] == 'admin' %}
+                <div class="dropdown d-inline-block">
+                    <button class="btn btn-sm btn-outline-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-user-shield"></i> {{ t('Admin') }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{{ url_for('auth.admin_users') }}"><i class="fas fa-users-cog me-2"></i>{{ t('Users') }}</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('auth.admin_models') }}"><i class="fas fa-microchip me-2"></i>{{ t('Models') }}</a></li>
+                    </ul>
+                </div>
+            {% endif %}
+            {{ language_switcher() }}
+            <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt"></i> {{ t('Logout') }}</a>
+        {% else %}
+            {{ language_switcher() }}
+            <a href="{{ url_for('auth.login') }}" class="btn btn-sm btn-primary"><i class="fas fa-sign-in-alt"></i> {{ t('Login') }}</a>
+            {% if g.registration_open %}
+                <a href="{{ url_for('auth.register') }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-user-plus"></i> {{ t('Register') }}</a>
+            {% endif %}
+        {% endif %}
+    </div>
+</nav>

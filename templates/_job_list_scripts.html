@@ -1,0 +1,186 @@
+<!-- Bulk-action JS shared by every page that includes _job_list.html. Include
+     once per page (safe to include more than once — just redefines the same
+     functions — but one page never needs more than one job list in this
+     app's current scope, so this is included exactly once alongside it). -->
+<script>
+const JOB_LIST_I18N = {
+    linkQueued: {{ t('Reference lists queued for {n} document(s); {s} skipped (not finished processing). Each viewer shows the result once it is done.') | tojson }},
+    skippedSuffix: {{ t('skipped') | tojson }},
+    noPermissionSuffix: {{ t('(no permission, or already gone)') | tojson }},
+    confirmDelete: {{ t('Permanently delete {n} job(s)? This cannot be undone.') | tojson }},
+    deletedVerb: {{ t('Deleted') | tojson }},
+    bulkDeleteFailed: {{ t('Bulk delete failed:') | tojson }},
+    pickCollectionFirst: {{ t('Pick a collection first') | tojson }},
+    nameForCollection: {{ t('Name for the new collection:') | tojson }},
+    addedVerb: {{ t('Added') | tojson }},
+    addedToCollection: {{ t('Added {n} job(s) to the collection.') | tojson }},
+    bulkAddFailed: {{ t('Bulk add-to-collection failed:') | tojson }},
+    confirmUnshare: {{ t("Remove {n} job(s) from this group's sharing? The jobs themselves won't be deleted.") | tojson }},
+    unsharedVerb: {{ t('Unshared') | tojson }},
+    bulkUnshareFailed: {{ t('Bulk unshare failed:') | tojson }},
+    confirmRemoveFromCollection: {{ t("Remove {n} publication(s) from this collection? They won't be deleted, and stay in any other collection they're in.") | tojson }},
+    removedVerb: {{ t('Removed') | tojson }},
+    bulkRemoveFailed: {{ t('Bulk remove-from-collection failed:') | tojson }},
+    requestFailed: {{ t('Request failed ({status})') | tojson }},
+};
+
+function jobListGetSelected(listId) {
+    return Array.from(document.querySelectorAll(`.job-list-checkbox[data-list="${listId}"]:checked`)).map(cb => cb.value);
+}
+
+function jobListUpdateBulkBar(listId) {
+    const selected = jobListGetSelected(listId);
+    const countEl = document.getElementById(listId + 'SelectedCount');
+    if (countEl) countEl.textContent = selected.length;
+    // The bar itself always stays visible (see _job_list.html) — only the
+    // action buttons enable/disable, so "Add to Collection" (and the
+    // "+ New collection..." option inside it) is discoverable even with
+    // nothing checked yet, instead of not existing on screen at all.
+    const bar = document.getElementById(listId + 'BulkBar');
+    if (bar) {
+        bar.querySelectorAll('.job-list-bulk-action').forEach(btn => {
+            btn.disabled = selected.length === 0;
+        });
+    }
+    // Keep the "Select All" checkbox in sync with individual row checkboxes
+    // (checked when every row is, indeterminate for a partial selection,
+    // unchecked otherwise) — called after both a row change and a Select
+    // All click itself, so this is the single place that state is decided.
+    const selectAll = document.getElementById(listId + 'SelectAll');
+    if (selectAll) {
+        const total = document.querySelectorAll(`.job-list-checkbox[data-list="${listId}"]`).length;
+        selectAll.checked = total > 0 && selected.length === total;
+        selectAll.indeterminate = selected.length > 0 && selected.length < total;
+    }
+}
+
+function jobListToggleSelectAll(listId, checked) {
+    document.querySelectorAll(`.job-list-checkbox[data-list="${listId}"]`).forEach(cb => { cb.checked = checked; });
+    jobListUpdateBulkBar(listId);
+}
+
+function jobListBulkExportCitations(listId, format) {
+    const jobIds = jobListGetSelected(listId);
+    if (jobIds.length === 0) return;
+    const params = new URLSearchParams();
+    params.set('format', format);
+    jobIds.forEach(id => params.append('job_ids', id));
+    window.location.href = `/api/jobs/bulk-export-citations?${params.toString()}`;
+}
+
+function jobListSummarize(verb, done, skipped) {
+    if (skipped && skipped.length > 0) {
+        return `${verb} ${done.length}, ${JOB_LIST_I18N.skippedSuffix} ${skipped.length} ${JOB_LIST_I18N.noPermissionSuffix}.`;
+    }
+    return null;
+}
+
+async function jobListBulkLinkReferenceLists(listId) {
+    const jobIds = jobListGetSelected(listId);
+    if (jobIds.length === 0) return;
+    try {
+        const resp = await fetch('/api/jobs/bulk-link-reference-lists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_ids: jobIds, source: 'internal' })
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || JOB_LIST_I18N.requestFailed.replace('{status}', resp.status));
+        alert(JOB_LIST_I18N.linkQueued.replace('{n}', data.queued.length).replace('{s}', data.skipped.length));
+    } catch (err) {
+        alert(`${JOB_LIST_I18N.requestFailed.replace('{status}', '')} ${err.message}`);
+    }
+}
+
+async function jobListBulkDelete(listId) {
+    const jobIds = jobListGetSelected(listId);
+    if (jobIds.length === 0) return;
+    if (!confirm(JOB_LIST_I18N.confirmDelete.replace('{n}', jobIds.length))) return;
+    try {
+        const resp = await fetch('/api/jobs/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_ids: jobIds })
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || JOB_LIST_I18N.requestFailed.replace('{status}', resp.status));
+        const msg = jobListSummarize(JOB_LIST_I18N.deletedVerb, data.deleted, data.skipped);
+        if (msg) alert(msg);
+        location.reload();
+    } catch (err) {
+        alert(`${JOB_LIST_I18N.bulkDeleteFailed} ${err.message}`);
+    }
+}
+
+async function jobListBulkAddToCollection(listId) {
+    const jobIds = jobListGetSelected(listId);
+    if (jobIds.length === 0) return;
+    const select = document.getElementById(listId + 'AddToCollectionSelect');
+    const collectionId = select ? select.value : null;
+    if (!collectionId) { alert(JOB_LIST_I18N.pickCollectionFirst); return; }
+
+    let body;
+    if (collectionId === '__new__') {
+        const name = prompt(JOB_LIST_I18N.nameForCollection);
+        if (!name || !name.trim()) return; // cancelled or blank — no-op, matches every other bulk action's early-return-on-cancel
+        body = { job_ids: jobIds, new_collection: { name: name.trim() } };
+    } else {
+        body = { job_ids: jobIds, collection_id: parseInt(collectionId, 10) };
+    }
+
+    try {
+        const resp = await fetch('/api/jobs/bulk-add-to-collection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || JOB_LIST_I18N.requestFailed.replace('{status}', resp.status));
+        const msg = jobListSummarize(JOB_LIST_I18N.addedVerb, data.added, data.skipped) || JOB_LIST_I18N.addedToCollection.replace('{n}', data.added.length);
+        alert(msg);
+        location.reload();
+    } catch (err) {
+        alert(`${JOB_LIST_I18N.bulkAddFailed} ${err.message}`);
+    }
+}
+
+async function jobListBulkUnshare(listId, groupId) {
+    const jobIds = jobListGetSelected(listId);
+    if (jobIds.length === 0) return;
+    if (!confirm(JOB_LIST_I18N.confirmUnshare.replace('{n}', jobIds.length))) return;
+    try {
+        const resp = await fetch('/api/jobs/bulk-unshare', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_ids: jobIds, group_id: groupId })
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || JOB_LIST_I18N.requestFailed.replace('{status}', resp.status));
+        const msg = jobListSummarize(JOB_LIST_I18N.unsharedVerb, data.unshared, data.skipped);
+        if (msg) alert(msg);
+        location.reload();
+    } catch (err) {
+        alert(`${JOB_LIST_I18N.bulkUnshareFailed} ${err.message}`);
+    }
+}
+
+async function jobListBulkRemoveFromCollection(listId, collectionId) {
+    const jobIds = jobListGetSelected(listId);
+    if (jobIds.length === 0) return;
+    if (!confirm(JOB_LIST_I18N.confirmRemoveFromCollection.replace('{n}', jobIds.length))) return;
+    try {
+        const resp = await fetch('/api/jobs/bulk-remove-from-collection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_ids: jobIds, collection_id: collectionId })
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || JOB_LIST_I18N.requestFailed.replace('{status}', resp.status));
+        const msg = jobListSummarize(JOB_LIST_I18N.removedVerb, data.removed, data.skipped);
+        if (msg) alert(msg);
+        location.reload();
+    } catch (err) {
+        alert(`${JOB_LIST_I18N.bulkRemoveFailed} ${err.message}`);
+    }
+}
+</script>

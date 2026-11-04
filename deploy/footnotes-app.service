@@ -1,0 +1,37 @@
+[Unit]
+Description=FootnotesExtractor (waitress)
+After=network.target
+
+[Service]
+Type=simple
+# --- adjust these to your server, see DEPLOY.md ---
+User=footnotes
+Group=footnotes
+WorkingDirectory=/opt/footnotes/web_app
+ExecStart=/opt/footnotes/web_app/venv/bin/python wsgi.py --host 127.0.0.1 --port 5002
+# ----------------------------------------------------------
+
+# Bound to 127.0.0.1, not 0.0.0.0: Caddy (deploy/Caddyfile) is the only
+# thing that should be reachable from the network — it terminates TLS and
+# proxies to this app locally. Don't point this at 0.0.0.0 unless you also
+# remove Caddy from the picture, which throws away TLS and the WAF-lite
+# protections a reverse proxy gives you for free.
+Restart=on-failure
+RestartSec=5
+
+# Optional: pin the Flask session-cookie secret instead of letting app.py
+# auto-generate and persist one to .secret_key on first run (either is
+# fine — auto-generate is simplest, this is here if you'd rather manage it
+# as a secret through your own tooling).
+# Environment="FLASK_SECRET_KEY=replace-with-a-long-random-value"
+
+# Hardening: this app only ever needs to read/write its own directory tree
+# (uploads/, results/, models/, app.db, .secret_key) — nothing else on the
+# system, so it's safe to lock everything else down.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/footnotes/web_app
+
+[Install]
+WantedBy=multi-user.target

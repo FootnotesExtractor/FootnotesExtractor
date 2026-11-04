@@ -1,0 +1,21 @@
+# For a server without a domain yet: HTTPS with a self-signed certificate, on the server's
+# IP address. Replace YOUR_SERVER_IP below. Browsers show a certificate warning until you
+# switch to deploy/Caddyfile with a real domain.
+#
+# Use the IP address and not a bare ":443": Caddy needs it to issue the certificate.
+YOUR_SERVER_IP {
+    tls internal
+
+    reverse_proxy 127.0.0.1:5002
+
+    # Slightly above the app's 900 MB upload limit, so the app gives the error message.
+    request_body {
+        max_size 910MB
+    }
+
+    encode gzip
+
+    log {
+        output stdout
+    }
+}

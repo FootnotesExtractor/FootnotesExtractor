@@ -1,0 +1,255 @@
+<!-- Shared job-list partial: per-row rendering + optional checkboxes/bulk-action
+     bar. Included (not extended) so it shares the calling template's context —
+     set these variables before including this partial:
+       job_rows          - list of dicts, see app.build_job_rows
+       list_id            - unique string (no spaces), lets more than one of
+                             these coexist on a page without id collisions
+       allow_bulk         - bool: render checkboxes + bulk bar at all. False
+                             for viewers (see can_edit_job) — a purely
+                             client-side hint, the real gate is server-side.
+       show_add_to_collection - bool (only meaningful if allow_bulk)
+       all_collections    - list of dicts, only needed if show_add_to_collection
+       show_new_collection_option - bool, optional, defaults true — the
+                             "+ New collection..." entry in the Add to
+                             Collection picker. Set false on a page that
+                             already has its own dedicated "Create a
+                             Collection" section (collections.html's default
+                             listing) so the same action isn't offered twice.
+       default_add_collection_id - int, optional — pre-selects this collection
+                             in the "Add to Collection" picker if it's present
+                             in all_collections (e.g. the collection you're
+                             already viewing, so the picker defaults to "here"
+                             rather than an arbitrary alphabetically-first
+                             collection); falls back to the browser's normal
+                             first-option default if unset or not found
+       show_delete        - bool (only meaningful if allow_bulk)
+       show_unshare       - bool (only meaningful if allow_bulk)
+       unshare_group_id   - int, required if show_unshare
+       show_remove_from_collection - bool (only meaningful if allow_bulk)
+       remove_collection_id - int, required if show_remove_from_collection
+       viewing_collection_id - int, optional — this list's own collection id
+                             (not necessarily the same as
+                             default_add_collection_id/remove_collection_id,
+                             though today it always matches). Tags each job
+                             link with ?collection_id=<id> so the interactive
+                             viewer can offer a "Back to <collection>" link
+                             (see interactive_viewer's back_to_collection in
+                             app.py) — omit entirely for lists that aren't a
+                             specific collection's contents (there's no
+                             "back" to offer in that case).
+       show_export_citations - bool (only meaningful if allow_bulk) — bulk
+                             "Export Citations" dropdown (same formats as the
+                             interactive viewer's own export menu), combining
+                             every selected job's citations into one file.
+       show_collections_column - bool — show each job's other collection
+                             memberships (job.collections — attached by the
+                             caller on top of app.build_job_rows's normal
+                             shape; see auth_routes.py's list_collections) as
+                             small badges under the filename.
+       empty_message      - text shown when job_rows is empty -->
+
+{% set viewing_collection_id = viewing_collection_id if viewing_collection_id is defined else none %}
+
+<!-- Compact "Title by Authors (Year)" + secondary details line, built from
+     whichever of the 9 book-metadata fields (see BOOK_METADATA_FIELDS in
+     app.py) are actually set — renders nothing at all for a job with none
+     set. Shared by every _job_list.html row regardless of show_* flags,
+     since "show metadata if present" isn't opt-in like the other columns. -->
+{% macro render_book_metadata(bm) %}
+{% if bm %}
+{% set title_line = [bm.title, (t('by') ~ ' ' ~ bm.authors) if bm.authors else none, ('(' ~ bm.year ~ ')') if bm.year else none] | select | join(' ') %}
+{% set details = [bm.publisher, (t('Journal:') ~ ' ' ~ bm.journal) if bm.journal else none, (t('ISBN:') ~ ' ' ~ bm.isbn) if bm.isbn else none, (t('ISSN:') ~ ' ' ~ bm.issn) if bm.issn else none, (t('DOI:') ~ ' ' ~ bm.doi) if bm.doi else none, (t('License:') ~ ' ' ~ bm.license) if bm.license else none] | select | join(' · ') %}
+{% if title_line %}<div class="text-muted small fst-italic">{{ title_line }}</div>{% endif %}
+{% if details %}<div class="text-muted small">{{ details }}</div>{% endif %}
+{% endif %}
+{% endmacro %}
+
+<style>
+    /* Small "book verified" marker + custom hover tooltip (no JS init needed,
+       unlike Bootstrap's own Tooltip component which isn't wired up anywhere
+       in this app) — see interactive_pdf_viewer.html's last-page prompt that
+       sets this via POST .../verify. */
+    .verified-marker {
+        position: relative;
+        display: inline-block;
+        color: #198754;
+        margin-left: 4px;
+        cursor: default;
+    }
+    .verified-marker-tooltip {
+        display: none;
+        position: absolute;
+        bottom: 130%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #212529;
+        color: #fff;
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: normal;
+        white-space: nowrap;
+        z-index: 20;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    .verified-marker:hover .verified-marker-tooltip,
+    .verified-marker:focus .verified-marker-tooltip {
+        display: block;
+    }
+</style>
+
+{% if allow_bulk %}
+<!-- Always visible, not hidden until something's checked — a hidden-until-
+     selected bar meant "Add to Collection" (and the "+ New collection..."
+     option inside it) was invisible with nothing to hint it existed. Action
+     buttons start disabled and enable once >=1 row is checked instead. -->
+<div class="job-list-bulk-bar d-flex align-items-center gap-2 mb-2 p-2 flex-wrap" id="{{ list_id }}BulkBar" style="background:#eef3ff; border-radius:6px;">
+    <div class="form-check mb-0">
+        <input type="checkbox" class="form-check-input" id="{{ list_id }}SelectAll"
+               onchange="jobListToggleSelectAll('{{ list_id }}', this.checked)" {% if not job_rows %}disabled{% endif %}>
+        <label class="form-check-label small" for="{{ list_id }}SelectAll">{{ t('Select All') }}</label>
+    </div>
+    <span class="small text-muted"><span id="{{ list_id }}SelectedCount">0</span> {{ t('selected') }}</span>
+    <!-- Everything actionable (as opposed to select-all/count, which are
+         informational) lives in this right-aligned group. -->
+    <div class="d-flex align-items-center gap-2 flex-wrap ms-auto">
+    {% if show_add_to_collection %}
+    <div class="d-flex align-items-center gap-1">
+        <select class="form-select form-select-sm w-auto" id="{{ list_id }}AddToCollectionSelect">
+            {% for c in all_collections %}
+            <option value="{{ c['id'] }}" {% if default_add_collection_id and c['id'] == default_add_collection_id %}selected{% endif %}>{{ t(c['name']) }}{% if c['is_default'] %} ({{ t('default') }}){% endif %}</option>
+            {% endfor %}
+            {% if show_new_collection_option is not defined or show_new_collection_option %}
+            <option value="__new__">{{ t('+ New collection...') }}</option>
+            {% endif %}
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-primary job-list-bulk-action" disabled onclick="jobListBulkAddToCollection('{{ list_id }}')">
+            <i class="fas fa-folder-plus"></i> {{ t('Add to Collection') }}
+        </button>
+    </div>
+    {% endif %}
+    {% if show_unshare %}
+    <button type="button" class="btn btn-sm btn-outline-warning job-list-bulk-action" disabled onclick="jobListBulkUnshare('{{ list_id }}', {{ unshare_group_id }})">
+        <i class="fas fa-user-slash"></i> {{ t('Remove from Group') }}
+    </button>
+    {% endif %}
+    {% if show_remove_from_collection %}
+    <button type="button" class="btn btn-sm btn-outline-warning job-list-bulk-action" disabled onclick="jobListBulkRemoveFromCollection('{{ list_id }}', {{ remove_collection_id }})">
+        <i class="fas fa-folder-minus"></i> {{ t('Remove from Collection') }}
+    </button>
+    {% endif %}
+    {% if g.user['role'] == 'admin' and INTERNAL_REFERENCE_LISTS %}
+    <!-- Admin: give the selected documents the reference list found in the
+         book itself (Reference List Linker, bulk_link_reference_lists). -->
+    <button type="button" class="btn btn-sm btn-outline-success job-list-bulk-action" disabled onclick="jobListBulkLinkReferenceLists('{{ list_id }}')"
+            title="{{ t("Find each book's own reference list and link it to the footnotes (in the background)") }}">
+        <i class="fas fa-project-diagram"></i> {{ t('Link reference lists') }}
+    </button>
+    {% endif %}
+    {% if show_delete %}
+    <button type="button" class="btn btn-sm btn-outline-danger job-list-bulk-action" disabled onclick="jobListBulkDelete('{{ list_id }}')">
+        <i class="fas fa-trash"></i> {{ t('Delete Permanently') }}
+    </button>
+    {% endif %}
+    {% if show_export_citations %}
+    <!-- Same 6 formats/labels as the interactive viewer's own Export
+         Citations dropdown (see interactive_pdf_viewer.html) — combines
+         every selected job's citations into one file, see
+         bulk_export_citations in app.py. Disabled (like every other
+         .job-list-bulk-action) until >=1 row is checked; a disabled
+         <button> never opens its dropdown, so that alone is enough gating. -->
+    <div class="dropdown d-inline-block">
+        <button type="button" class="btn btn-sm btn-outline-success dropdown-toggle job-list-bulk-action" disabled
+                data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="fas fa-file-export"></i> {{ t('Export Citations') }}
+        </button>
+        <ul class="dropdown-menu">
+            <li><h6 class="dropdown-header">BibLaTeX</h6></li>
+            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'bibtex_standard'); return false;">{{ t('BibTeX - Standard') }}</a></li>
+            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'bibtex_expanded'); return false;">{{ t('BibTeX - Expanded') }}</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><h6 class="dropdown-header">{{ t('Formatted Styles') }}</h6></li>
+            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'apa'); return false;">{{ t('APA 7th Edition') }}</a></li>
+            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'chicago'); return false;">{{ t('Chicago 17th Edition') }}</a></li>
+            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'mla'); return false;">{{ t('MLA 9th Edition') }}</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'reference_strings'); return false;">{{ t('Reference Strings') }}</a></li>
+        </ul>
+    </div>
+    {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if job_rows %}
+<div class="list-group" id="{{ list_id }}List">
+    {% for job in job_rows %}
+    <div class="list-group-item d-flex justify-content-between align-items-center gap-2" data-job-id="{{ job.job_id }}">
+        <div class="d-flex align-items-center gap-2 flex-grow-1" style="min-width: 0;">
+            {% if allow_bulk %}
+            <input type="checkbox" class="form-check-input job-list-checkbox" data-list="{{ list_id }}"
+                   value="{{ job.job_id }}" onchange="jobListUpdateBulkBar('{{ list_id }}')">
+            {% endif %}
+            <div style="min-width: 0;">
+                <a href="{{ url_for('interactive_viewer', job_id=job.job_id, collection_id=viewing_collection_id) if job.status == 'completed' else url_for('status', job_id=job.job_id) }}">
+                    <i class="fas fa-file-pdf text-danger me-1"></i>{{ job.filename }}
+                </a>
+                {% if job.verified %}
+                <span class="verified-marker" tabindex="0">
+                    <i class="fas fa-check-circle"></i>
+                    <span class="verified-marker-tooltip">{{ t('Verified by {who}', who=job.verified_by or t('unknown user')) }}{% if job.verified_at %} {{ t('on {date}', date=job.verified_at | human_date) }}{% endif %}</span>
+                </span>
+                {% endif %}
+                {% if job.owner_info %}
+                    {% if job.owner_info.group_name %}
+                    <span class="badge bg-info text-dark ms-1"><i class="fas fa-users"></i> {{ job.owner_info.group_name }}</span>
+                    {% endif %}
+                {% endif %}
+                {% if job.timestamp %}<div class="text-muted small">{{ job.timestamp | human_date }}</div>{% endif %}
+                {{ render_book_metadata(job.book_metadata) }}
+                {% if show_collections_column and job.collections %}
+                <div class="mt-1">
+                    {% for c in job.collections %}
+                    <a href="{{ url_for('auth.collection_detail', collection_id=c.id) }}" class="badge bg-light text-dark border text-decoration-none me-1">
+                        <i class="fas fa-folder"></i> {{ t(c.name) }}
+                    </a>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        <!-- status, and under it the reference-list marker (Reference List Linker)
+             and, beside it, how many items are marked TO REVIEW (review_flags) -->
+        <div class="d-flex flex-column align-items-end gap-1 flex-shrink-0">
+            <span class="badge {{ 'bg-success' if job.status == 'completed' else ('bg-danger' if job.status == 'failed' else 'bg-secondary') }}">{{ t(job.status) }}</span>
+            {% set show_list = job.reference_list_entries is not none and feature('reference_linker') %}
+            {% set show_review = job.review_flags and feature('review_flags') %}
+            {% if show_list or show_review %}
+            <div class="d-flex gap-1">
+                {% if show_review %}
+                <a href="{{ url_for('interactive_viewer', job_id=job.job_id, collection_id=viewing_collection_id) }}" class="badge text-decoration-none"
+                   style="background:#fef3c7; color:#92400e; border:1px solid #f59e0b;"
+                   title="{{ t('{n} item(s) marked TO REVIEW', n=job.review_flags) }}">
+                    <i class="fas fa-flag"></i> {{ job.review_flags }}
+                </a>
+                {% endif %}
+                {% if show_list %}
+                {% if job.reference_list_links is not none %}
+                <span class="badge" style="background:#0f766e;" title="{{ t('Reference list: {k} of {n} entries linked to footnote references', k=job.reference_list_links, n=job.reference_list_entries) }}">
+                    <i class="fas fa-project-diagram"></i> {{ job.reference_list_links }}/{{ job.reference_list_entries }}
+                </span>
+                {% else %}
+                <span class="badge" style="background:#0f766e;" title="{{ t('Has a reference list ({n} entries)', n=job.reference_list_entries) }} · {{ t('links being counted, reload to see them') }}">
+                    <i class="fas fa-project-diagram"></i> {{ job.reference_list_entries }}
+                </span>
+                {% endif %}
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="text-muted mb-0">{{ empty_message or t('Nothing here yet.') }}</p>
+{% endif %}
