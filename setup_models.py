@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 MODELS_REPO = os.environ.get("FOOTNOTES_MODELS_REPO",
-                             "FootnotesExtractor/footnotes-extractor-v2-models")
+                             "FootnotesExtractor/footnotes-extractor-models")
 MODELS_DIR = Path(__file__).parent / "models"
 
 # What the app loads by default (app.py: od_model / ner_suite defaults). The

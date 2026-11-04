@@ -11,7 +11,7 @@ ibid. and op. cit. A reviewer corrects anything in an interactive viewer, and th
 results export as BibTeX, APA, Chicago, MLA, plain text, JSON or CSV.
 
 **Project page:** <https://footnotesextractor.github.io/FootnotesExtractor/>
-**Models:** <https://huggingface.co/FootnotesExtractor/footnotes-extractor-v2-models>
+**Models:** <https://huggingface.co/FootnotesExtractor/footnotes-extractor-models>
 
 ## How it works
 
@@ -171,7 +171,7 @@ work; updating the app leaves them alone. Passwords and API keys are stored only
 FootnotesExtractor is released under the [GNU Affero General Public License v3.0](LICENSE).
 Copyright (C) 2026 the FootnotesExtractor authors.
 
-The [model weights](https://huggingface.co/FootnotesExtractor/footnotes-extractor-v2-models) are
+The [model weights](https://huggingface.co/FootnotesExtractor/footnotes-extractor-models) are
 released under the same licence. Some of the books used for training are under non-commercial
 licences, so commercial use of the models would require retraining without them.
 
