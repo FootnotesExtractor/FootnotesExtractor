@@ -4,7 +4,7 @@ class PDFExtractorApp {
     constructor() {
         this.currentJob = null;
         this.statusPollingInterval = null;
-        this.maxFileSize = 900 * 1024 * 1024; // 900MB
+        this.maxFileSize = 200 * 1024 * 1024; // 200MB, app.py's MAX_PDF_MB
         this.allowedTypes = ['application/pdf'];
         
         this.init();

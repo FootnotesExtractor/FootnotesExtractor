@@ -8,7 +8,7 @@ YOUR_SERVER_IP {
 
     reverse_proxy 127.0.0.1:5002
 
-    # Slightly above the app's 900 MB upload limit, so the app gives the error message.
+    # Above the app's upload limit of 850 MB (891,289,600 bytes), so the app gives the error message.
     request_body {
         max_size 910MB
     }

@@ -96,7 +96,7 @@
                             <div class="upload-area mb-4" onclick="document.getElementById('fileInput').click()">
                                 <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
                                 <h5>{{ t('Click to select PDFs or drag & drop') }}</h5>
-                                <p class="text-muted">{{ t('Maximum file size: 900MB per file') }}</p>
+                                <p class="text-muted">{{ t('Up to {size} MB per PDF. Upload several at once: up to {n} PDFs and {total} MB together.', size=MAX_PDF_MB, n=MAX_BATCH_FILES, total=MAX_BATCH_MB) }}</p>
                                 <input type="file" id="fileInput" name="files" accept=".pdf" multiple style="display: none;" required>
                                 <div id="fileInfo" class="mt-3" style="display: none;">
                                     <div class="alert alert-info">
@@ -106,6 +106,7 @@
                                     </div>
                                 </div>
                             </div>
+                            <div id="uploadLimitError" class="alert alert-danger" role="alert" style="display: none;"></div>
 
                             <!-- Per-user features (features.py): each option only for users
                                  who have the feature; the server enforces the same
@@ -422,7 +423,26 @@
             nameForCollection: {{ t('Name for the new collection:') | tojson }},
             couldNotCreateCollection: {{ t('Could not create collection:') | tojson }},
             processing: {{ t('Processing...') | tojson }},
+            pdfTooLarge: {{ t('Too large: {names}. Each PDF can be at most {mb} MB.', names='{names}', mb=MAX_PDF_MB) | tojson }},
+            uploadTooLarge: {{ t('This upload is too large. One upload can hold at most {n} PDFs and {mb} MB in total.', n=MAX_BATCH_FILES, mb=MAX_BATCH_MB) | tojson }},
         };
+        // The server refuses the same (_upload_limit_error, MAX_CONTENT_LENGTH);
+        // saying so here spares waiting for the whole upload first.
+        const MAX_PDF_BYTES = {{ MAX_PDF_MB }} * 1024 * 1024;
+        const MAX_BATCH_BYTES = {{ MAX_BATCH_MB }} * 1024 * 1024;
+        const MAX_BATCH_FILES = {{ MAX_BATCH_FILES }};
+
+        function uploadLimitError(files) {
+            const list = Array.from(files);
+            const tooLarge = list.filter(file => file.size > MAX_PDF_BYTES).map(file => file.name);
+            if (tooLarge.length) {
+                const names = tooLarge.slice(0, 5).join(', ') + (tooLarge.length > 5 ? ', …' : '');
+                return I18N.pdfTooLarge.replace('{names}', () => names);
+            }
+            const total = list.reduce((sum, file) => sum + file.size, 0);
+            return list.length > MAX_BATCH_FILES || total > MAX_BATCH_BYTES ? I18N.uploadTooLarge : '';
+        }
+
         // File input handling
         const fileInput = document.getElementById('fileInput');
         const fileInfo = document.getElementById('fileInfo');
@@ -448,6 +468,11 @@
             } else {
                 fileInfo.style.display = 'none';
             }
+            const limitError = uploadLimitError(this.files);
+            const limitBox = document.getElementById('uploadLimitError');
+            limitBox.textContent = limitError;
+            limitBox.style.display = limitError ? 'block' : 'none';
+            document.getElementById('submitBtn').disabled = Boolean(limitError);
         });
 
         // Drag and drop functionality

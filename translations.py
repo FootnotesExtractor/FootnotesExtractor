@@ -103,7 +103,7 @@ PL = {
     'reference handling': '',
     'View History': 'Zobacz historię',
     'Click to select PDFs or drag & drop': 'Kliknij, aby wybrać pliki PDF, lub przeciągnij je tutaj',
-    'Maximum file size: 900MB per file': 'Maksymalny rozmiar pliku: 900 MB na plik',
+    'Up to {size} MB per PDF. Upload several at once: up to {n} PDFs and {total} MB together.': 'Do {size} MB na plik PDF. Możesz przesłać kilka naraz: do {n} plików PDF i łącznie {total} MB.',
     'Advanced Options': 'Opcje zaawansowane',
     'Object Detection Model': 'Model wykrywania obiektów',
     'Disabled by admin': 'Wyłączone przez administratora',
@@ -593,7 +593,8 @@ PL = {
     'Processing not completed yet': 'Przetwarzanie jeszcze nie zostało ukończone',
     'Result file not found': 'Nie znaleziono pliku wynikowego',
     'Results not found': 'Nie znaleziono wyników',
-    'File too large. Maximum size is 900MB.': 'Plik jest zbyt duży. Maksymalny rozmiar to 900 MB.',
+    'This upload is too large. One upload can hold at most {n} PDFs and {mb} MB in total.': 'To przesłanie jest zbyt duże. Jednorazowo można przesłać najwyżej {n} plików PDF i łącznie {mb} MB.',
+    'Too large: {names}. Each PDF can be at most {mb} MB.': 'Zbyt duże: {names}. Każdy plik PDF może mieć najwyżej {mb} MB.',
 
     # Error pages (404.html / 500.html via _error_base.html)
     'Page not found': 'Nie znaleziono strony',

@@ -114,7 +114,18 @@ def _load_or_create_secret_key():
 
 app = Flask(__name__)
 app.secret_key = _load_or_create_secret_key()
-app.config['MAX_CONTENT_LENGTH'] = 900 * 1024 * 1024  # 900MB max file size
+# What one upload can hold. A batch comes in as a single request, so
+# MAX_CONTENT_LENGTH is the limit for all its files together, and each PDF is
+# measured on its own in _upload_limit_error. The batch limit has to stay below
+# the proxy's (deploy/Caddyfile), so the app is the one to give the message:
+# Caddy's MB are decimal, so its 910MB is 910,000,000 bytes, and over that the
+# browser gets an empty 413. These MB are 1024 * 1024 bytes: 850 is 891,289,600.
+# The count stays below Werkzeug's 1000 form parts per request (files plus the
+# form's fields), which it would refuse with the same 413.
+MAX_PDF_MB = 200
+MAX_BATCH_MB = 850
+MAX_BATCH_FILES = 900
+app.config['MAX_CONTENT_LENGTH'] = MAX_BATCH_MB * 1024 * 1024
 
 # Session cookie hardening — this app is only ever served over HTTPS (Caddy
 # terminates TLS; wsgi.py binds 127.0.0.1, see deploy/DEPLOY.md), so there's
@@ -214,6 +225,7 @@ def _human_date(value):
 
 app.jinja_env.filters['human_date'] = _human_date
 app.jinja_env.globals['t'] = t
+app.jinja_env.globals.update(MAX_PDF_MB=MAX_PDF_MB, MAX_BATCH_MB=MAX_BATCH_MB, MAX_BATCH_FILES=MAX_BATCH_FILES)
 # {% if feature('layout_assist') %} - the per-user features (features.py)
 app.jinja_env.globals['feature'] = has_feature
 app.jinja_env.globals['FEATURES'] = FEATURES
@@ -1173,6 +1185,30 @@ def _clean_book_metadata(raw):
     return cleaned
 
 
+def _upload_size(file):
+    """Bytes in an uploaded file, which multipart does not state per file. The
+    stream is rewound, because saving it later starts from where it stands."""
+    file.stream.seek(0, os.SEEK_END)
+    size = file.stream.tell()
+    file.stream.seek(0)
+    return size
+
+
+def _upload_limit_error(files):
+    """Why this upload is refused, or None. Asked before anything is saved or
+    queued, so a batch goes in whole or not at all. MAX_CONTENT_LENGTH has
+    already seen to the size of all the files together."""
+    pdfs = [f for f in files if f and allowed_file(f.filename)]
+    if len(pdfs) > MAX_BATCH_FILES:
+        return t('This upload is too large. One upload can hold at most {n} PDFs and {mb} MB in total.',
+                 n=MAX_BATCH_FILES, mb=MAX_BATCH_MB)
+    too_large = [f.filename for f in pdfs if _upload_size(f) > MAX_PDF_MB * 1024 * 1024]
+    if too_large:
+        names = ', '.join(too_large[:5]) + (', …' if len(too_large) > 5 else '')
+        return t('Too large: {names}. Each PDF can be at most {mb} MB.', names=names, mb=MAX_PDF_MB)
+    return None
+
+
 def _process_upload(files, options, group_id, collection_id, user, book_metadata=None):
     """Core upload handling shared by the HTML /upload form route and the
     JSON POST /api/v1/documents route: saves each valid file, initializes its
@@ -1252,6 +1288,11 @@ def upload_file():
     files = request.files.getlist('files')
     if not files or files[0].filename == '':
         flash(t('No file selected'))
+        return redirect(url_for('index'))
+
+    limit_error = _upload_limit_error(files)
+    if limit_error:
+        flash(limit_error)
         return redirect(url_for('index'))
 
     # Get processing options from form
@@ -6974,8 +7015,12 @@ def clear_history():
 
 @app.errorhandler(413)
 def too_large(e):
-    """Handle file too large error"""
-    flash(t('File too large. Maximum size is 900MB.'))
+    """More than one upload can hold, in bytes or in form parts."""
+    message = t('This upload is too large. One upload can hold at most {n} PDFs and {mb} MB in total.',
+                n=MAX_BATCH_FILES, mb=MAX_BATCH_MB)
+    if request.path.startswith('/api/'):
+        return jsonify({'error': message}), 413
+    flash(message)
     return redirect(url_for('index'))
 
 @app.route('/favicon.ico')

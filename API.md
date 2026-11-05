@@ -85,6 +85,10 @@ this is normal, just keep polling.
 `multipart/form-data`. File field: `file` (or `files`, repeatable, to match
 the browser form — the JSON response covers all of them either way).
 
+Each PDF can be up to 200 MB, and one upload can hold up to 900 PDFs and 850 MB
+together. Over any of these the whole upload is refused with `413` and an `error`
+message, and nothing is queued.
+
 What an account may set depends on its features (Admin → Users): without
 **Advanced Options** every model, threshold and processing option is the
 default whatever is sent; `enable_grobid` (find the book's reference list)

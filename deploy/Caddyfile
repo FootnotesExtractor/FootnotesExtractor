@@ -7,9 +7,9 @@
 yourdomain.example {
     reverse_proxy 127.0.0.1:5002
 
-    # Matches app.py's MAX_CONTENT_LENGTH (900MB) — PDF uploads larger than
-    # that are rejected by Flask anyway, but Caddy would otherwise cut the
-    # request off at its own smaller default first with a less useful error.
+    # Above app.py's MAX_CONTENT_LENGTH (850 MB of 1024 * 1024 bytes, 891,289,600 bytes): Caddy's MB are
+    # decimal. Uploads over that are rejected by Flask with a message, but Caddy would
+    # otherwise cut the request off at its own smaller default first with a less useful error.
     request_body {
         max_size 910MB
     }

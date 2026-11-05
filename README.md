@@ -64,7 +64,8 @@ The first account you register becomes the administrator, who creates all furthe
 
 ### 1. Upload
 
-Drop one or more PDFs on the start page, born-digital or scanned, up to 900 MB each. When
+Drop one or more PDFs on the start page, born-digital or scanned, up to 200 MB each. One upload
+can hold up to 900 PDFs and 850 MB together. When
 processing ends, the book opens in the viewer with every footnote boxed, read and tagged.
 
 ![A PDF is uploaded, processed, and opens in the viewer with its footnotes boxed and their references tagged](docs/assets/upload.gif)

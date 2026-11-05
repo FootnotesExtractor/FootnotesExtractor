@@ -50,7 +50,7 @@ def api_upload_documents():
     """Multipart upload — same processing options as the HTML form. Accepts
     either a single 'file' field or a repeated 'files' field (matching the
     browser form's field name), so a simple `curl -F file=@paper.pdf` works."""
-    from app import (_process_upload, _validate_model_selection, _limit_upload_options, _resolve_grobid_url, allowed_file, BOOK_METADATA_FIELDS,
+    from app import (_process_upload, _upload_limit_error, _validate_model_selection, _limit_upload_options, _resolve_grobid_url, allowed_file, BOOK_METADATA_FIELDS,
                      DEFAULT_OD_MODEL, DEFAULT_NER_SUITE)
 
     files = [f for f in request.files.getlist('files') if f and f.filename]
@@ -60,6 +60,9 @@ def api_upload_documents():
         return jsonify({'error': 'No file provided (multipart field "file" or "files")'}), 400
     if not all(allowed_file(f.filename) for f in files):
         return jsonify({'error': 'Only PDF files are accepted'}), 400
+    limit_error = _upload_limit_error(files)
+    if limit_error:
+        return jsonify({'error': limit_error}), 413
 
     form = request.form
 
