@@ -9,6 +9,9 @@ they live in a separate Hub repo and are pulled in here after cloning:
     python setup_models.py
     python wsgi.py
 
+`python setup_models.py --herbert` also fetches a second NER suite (about 4.2 GB)
+that you can choose instead of the default.
+
 Idempotent — already-present files are skipped, so re-running it is cheap and
 a partial download can simply be resumed by running it again.
 
@@ -29,18 +32,27 @@ MODELS_DIR = Path(__file__).parent / "models"
 # applied as a cascade; all three are required.
 REQUIRED = [
     "od/yolo11n_validated_v2.pt",
+    "ner/validated_v2_xlmr_nested/NER_reference/",
+    "ner/validated_v2_xlmr_nested/NER_component/",
+    "ner/validated_v2_xlmr_nested/NER_names/",
+]
+
+# A second NER suite, with HerBERT for components and names. Too large to come
+# along unasked, and the app does not need it, so it only comes with --herbert.
+OPTIONAL = [
     "ner/validated_v2_nested/NER_reference/",
     "ner/validated_v2_nested/NER_component/",
     "ner/validated_v2_nested/NER_names/",
 ]
 
-OPTIONAL = []
+
+def wanted(argv) -> list:
+    return REQUIRED + OPTIONAL if "--herbert" in argv else list(REQUIRED)
 
 
 def main() -> int:
-    minimal = "--minimal" in sys.argv
-    patterns = list(REQUIRED) + ([] if minimal else OPTIONAL)
-    patterns = [p + "**" if p.endswith("/") else p for p in patterns]
+    required = wanted(sys.argv)
+    patterns = [p + "**" if p.endswith("/") else p for p in required]
 
     try:
         from huggingface_hub import snapshot_download
@@ -51,7 +63,8 @@ def main() -> int:
 
     print(f"Source     : {MODELS_REPO}")
     print(f"Destination: {MODELS_DIR}")
-    print("Downloading (~4 GB on a first run; resumable)...\n")
+    size = "~10 GB" if len(required) > len(REQUIRED) else "~5.6 GB"
+    print(f"Downloading ({size} on a first run; resumable)...\n")
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     try:
@@ -67,7 +80,7 @@ def main() -> int:
                   "copy, set FOOTNOTES_MODELS_REPO or place it under models/.", file=sys.stderr)
         return 1
 
-    missing = [p for p in REQUIRED
+    missing = [p for p in required
                if not (MODELS_DIR / p.rstrip("/")).exists()]
     if missing:
         print("\nDownload finished but these are still missing:", file=sys.stderr)

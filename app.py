@@ -985,12 +985,12 @@ CURATED_OD_MODELS = {
 }
 
 # What a new upload uses unless it picks otherwise:
-# YOLO11-n detection, XLM-R large references, HerBERT large components,
-# HerBERT base names, nested. Jobs keep the models recorded in their options;
+# YOLO11-n detection, XLM-R large references and components, XLM-R base names,
+# nested. Jobs keep the models recorded in their options;
 # the 'yolo11n_640_production'/'mbert_production' fallbacks elsewhere in this
 # file are for old jobs that predate those options, so they stay as they are.
 DEFAULT_OD_MODEL = 'yolo11n_validated_v2'
-DEFAULT_NER_SUITE = 'validated_v2_nested'
+DEFAULT_NER_SUITE = 'validated_v2_xlmr_nested'
 app.jinja_env.globals['DEFAULT_OD_MODEL'] = DEFAULT_OD_MODEL
 # Every NER suite runs on the GPU. A suite loads only when a job or an edit
 # needs it, and switching one off in Admin -> Models gives its memory back
@@ -1063,7 +1063,9 @@ def get_available_models():
                     is_production = "production" in key.lower()
                     # Format base name (e.g. bert -> BERT, distilbert -> DistilBERT, xlmroberta -> XLMRoBERTa)
                     base_raw = key.split('_')[0].lower()
-                    if key == DEFAULT_NER_SUITE:
+                    if key == 'validated_v2_xlmr_nested':
+                        base_name = 'Validated v2: XLM-R large / XLM-R large / XLM-R base'
+                    elif key == 'validated_v2_nested':
                         base_name = 'Validated v2: XLM-R large / HerBERT large / HerBERT base'
                     elif base_raw == 'xlmroberta':
                         base_name = 'XLMRoBERTa'

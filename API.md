@@ -103,7 +103,7 @@ Optional form fields (all have sane defaults if omitted):
 | `comp_conf` | `0.7` | Component-extraction confidence threshold |
 | `batch_size` | `8` | |
 | `od_model` | `yolo11n_validated_v2` | Which detection model checkpoint to use |
-| `ner_suite` | `validated_v2_nested` | Which NER model suite to use (XLM-R large / HerBERT large / HerBERT base, nested) |
+| `ner_suite` | `validated_v2_xlmr_nested` | Which NER model suite to use (XLM-R large / XLM-R large / XLM-R base, nested). `validated_v2_nested` (XLM-R large / HerBERT large / HerBERT base, nested) is there if it was fetched with `setup_models.py --herbert` |
 | `ocr_engine` | `surya` | `surya` or anything else for the text-layer fallback |
 | `enable_grobid` | `false` | `true`/`1`/`yes`/`on` all count as true |
 | `enable_enrichment` | `false` | Google Books/Crossref/OpenAIRE metadata enrichment |

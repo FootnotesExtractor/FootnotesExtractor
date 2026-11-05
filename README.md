@@ -19,7 +19,7 @@ results export as BibTeX, APA, Chicago, MLA, plain text, JSON or CSV.
 2. **Read them:** text comes from the PDF's text layer or, for scans, from Surya OCR.
 3. **Split them:** rules follow the footnote numbers, cut each area into single footnotes
    and rejoin notes that run over a page break.
-4. **Parse references:** transformer models (XLM-R large, HerBERT large and base) find each
+4. **Parse references:** transformer models (XLM-R large and base) find each
    reference in a footnote, tag its parts and split names into first and last name.
 5. **Resolve back-references:** rules link ibid. and op. cit. to the work they refer to.
 
@@ -48,11 +48,16 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-python setup_models.py              # ~4 GB
+python setup_models.py              # ~5.6 GB
 FOOTNOTES_INSECURE_COOKIES=1 python wsgi.py --host 127.0.0.1     # http://127.0.0.1:5002
 ```
 
 Surya downloads its own OCR weights (about 2.4 GB) the first time it runs.
+
+`python setup_models.py --herbert` also fetches a second set of parsing models, with HerBERT for parts
+and names where the default set uses XLM-R. It takes another 4.2 GB of disk and more GPU memory, so it
+needs more than the minimum above. Choose it under **Advanced Options** when you upload, or with
+`ner_suite=validated_v2_nested` in the API.
 
 `FOOTNOTES_INSECURE_COOKIES=1` lets you log in over plain HTTP on your own machine. Never set it on
 a server: use HTTPS there and leave it out.
