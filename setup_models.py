@@ -16,7 +16,7 @@ Idempotent — already-present files are skipped, so re-running it is cheap and
 a partial download can simply be resumed by running it again.
 
 Override the source with FOOTNOTES_MODELS_REPO if you host your own copy.
-Surya's OCR weights (about 2.4 GB) are not part of this: Surya downloads them
+Surya's OCR weights (about 1.1 GB) are not part of this: Surya downloads them
 itself the first time it runs.
 """
 import os

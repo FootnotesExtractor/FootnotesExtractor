@@ -245,7 +245,8 @@ footer a { color: inherit; }
             <tr><td>GPU memory</td><td><strong>10 GB</strong></td></tr>
             <tr><td>CPU</td><td>4 cores</td></tr>
             <tr><td>RAM</td><td>12 GB</td></tr>
-            <tr><td>Disk</td><td>6 GB</td></tr>
+            <tr><td>Disk: app and Python packages</td><td>6.1 GB</td></tr>
+            <tr><td>Disk: models</td><td>6.7 GB (5.6 GB for finding and parsing, 1.1 GB for OCR)</td></tr>
             <tr><td>Speed, few footnotes</td><td>0.3 s per page</td></tr>
           </tbody>
         </table>
@@ -260,7 +261,7 @@ pip install -r requirements.txt
 
 python setup_models.py              # about 5.6 GB
 FOOTNOTES_INSECURE_COOKIES=1 python wsgi.py --host 127.0.0.1     # http://127.0.0.1:5002</code></pre></div>
-      <p>Surya downloads its own OCR weights (about 2.4 GB) the first time it runs. <code>python setup_models.py --herbert</code> also fetches a second set of parsing models, with HerBERT for parts and names where the default set uses XLM-R; it takes another 4.2 GB of disk and more GPU memory, and you choose it under <strong>Advanced Options</strong> when you upload. <code>FOOTNOTES_INSECURE_COOKIES=1</code> lets you log in over plain HTTP on your own machine; never set it on a server, where you should use HTTPS instead. The first account you register becomes the administrator, who creates all further accounts in <strong>Admin → Users</strong>. For a server, see the <a href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/deploy/DEPLOY.md">deployment notes</a>.</p>
+      <p>Surya downloads its own OCR weights (about 1.1 GB) the first time it runs. <code>python setup_models.py --herbert</code> also fetches a second set of parsing models, with HerBERT for parts and names where the default set uses XLM-R; it takes another 4.2 GB of disk and more GPU memory, and you choose it under <strong>Advanced Options</strong> when you upload. <code>FOOTNOTES_INSECURE_COOKIES=1</code> lets you log in over plain HTTP on your own machine; never set it on a server, where you should use HTTPS instead. The first account you register becomes the administrator, who creates all further accounts in <strong>Admin → Users</strong>. For a server, see the <a href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/deploy/DEPLOY.md">deployment notes</a>.</p>
     </section>
 
     <section id="api">

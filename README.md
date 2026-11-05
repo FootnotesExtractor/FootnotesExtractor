@@ -32,7 +32,8 @@ Minimum requirements:
 | GPU memory | **10 GB** |
 | CPU | 4 cores |
 | RAM | 12 GB |
-| Disk | 6 GB |
+| Disk: app and Python packages | 6.1 GB |
+| Disk: models | 6.7 GB (5.6 GB for finding and parsing, 1.1 GB for OCR) |
 | Speed, few footnotes | 0.3 s per page |
 
 - **Software:** Linux and Python 3.10. The GPU must be NVIDIA: the pinned build is PyTorch 2.6
@@ -52,7 +53,7 @@ python setup_models.py              # ~5.6 GB
 FOOTNOTES_INSECURE_COOKIES=1 python wsgi.py --host 127.0.0.1     # http://127.0.0.1:5002
 ```
 
-Surya downloads its own OCR weights (about 2.4 GB) the first time it runs.
+Surya downloads its own OCR weights (about 1.1 GB) the first time it runs.
 
 `python setup_models.py --herbert` also fetches a second set of parsing models, with HerBERT for parts
 and names where the default set uses XLM-R. It takes another 4.2 GB of disk and more GPU memory, so it
