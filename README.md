@@ -34,7 +34,6 @@ Minimum requirements:
 | RAM | 12 GB |
 | Disk: app and Python packages | 6.1 GB |
 | Disk: models | 6.7 GB (5.6 GB for finding and parsing, 1.1 GB for OCR) |
-| Speed, few footnotes | 0.3 s per page |
 
 - **Software:** Linux and Python 3.10. The GPU must be NVIDIA: the pinned build is PyTorch 2.6
   with CUDA 12.4.
@@ -73,6 +72,8 @@ The first account you register becomes the administrator, who creates all furthe
 Drop one or more PDFs on the start page, born-digital or scanned, up to 200 MB each. One upload
 can hold up to 900 PDFs and 850 MB together. When
 processing ends, the book opens in the viewer with every footnote boxed, read and tagged.
+Averaged over all the books and articles uploaded to our server so far, processing takes about
+1 second per page.
 
 ![A PDF is uploaded, processed, and opens in the viewer with its footnotes boxed and their references tagged](docs/assets/upload.gif)
 
