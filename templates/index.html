@@ -93,7 +93,7 @@
 
                         <form id="uploadForm" action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data">
                             <!-- File Upload Area -->
-                            <div class="upload-area mb-4" onclick="document.getElementById('fileInput').click()">
+                            <div class="upload-area mb-4" data-click-target="#fileInput">
                                 <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
                                 <h5>{{ t('Click to select PDFs or drag & drop') }}</h5>
                                 <p class="text-muted">{{ t('Up to {size} MB per PDF. Upload several at once: up to {n} PDFs and {total} MB together.', size=MAX_PDF_MB, n=MAX_BATCH_FILES, total=MAX_BATCH_MB) }}</p>
@@ -413,7 +413,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
+    <script nonce="{{ csp_nonce }}">
         // Just the handful of strings this page's own JS needs to show the
         // user — not the full translations.PL dict (see interactive_pdf_viewer.html
         // for the fuller window.I18N approach used by the JS-heavy viewer).

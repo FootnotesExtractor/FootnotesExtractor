@@ -51,7 +51,10 @@
                 </div>
             {% endif %}
             {{ language_switcher() }}
-            <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt"></i> {{ t('Logout') }}</a>
+            <form method="post" action="{{ url_for('auth.logout') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt"></i> {{ t('Logout') }}</button>
+            </form>
         {% else %}
             {{ language_switcher() }}
             <a href="{{ url_for('auth.login') }}" class="btn btn-sm btn-primary"><i class="fas fa-sign-in-alt"></i> {{ t('Login') }}</a>

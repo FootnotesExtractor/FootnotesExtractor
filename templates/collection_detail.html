@@ -73,7 +73,7 @@
                         </form>
 
                         {% if not collection['is_default'] %}
-                        <form method="post" class="text-end" action="{{ url_for('auth.delete_collection', collection_id=collection['id']) }}" onsubmit="return confirm({{ t('Delete this collection? Jobs inside it are not deleted, only removed from the collection.') | tojson }});">
+                        <form method="post" class="text-end" action="{{ url_for('auth.delete_collection', collection_id=collection['id']) }}" data-confirm="{{ t('Delete this collection? Jobs inside it are not deleted, only removed from the collection.') }}">
                             <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fas fa-trash"></i> {{ t('Delete Collection') }}</button>
                         </form>
                         {% else %}

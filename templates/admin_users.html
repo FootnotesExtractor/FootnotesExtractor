@@ -101,7 +101,7 @@
                                             <input type="hidden" name="feature" value="{{ name }}">
                                             <div class="form-check form-switch mb-0 d-inline-block">
                                                 <input class="form-check-input" type="checkbox" role="switch" name="enabled" value="1"
-                                                       onchange="this.form.submit()" aria-label="{{ t(spec.label) }}: {{ u['username'] }}"
+                                                       data-autosubmit aria-label="{{ t(spec.label) }}: {{ u['username'] }}"
                                                        {% if user_features[u['id']][name] %}checked{% endif %}>
                                                 <input type="hidden" name="enabled" value="0">
                                             </div>
@@ -110,7 +110,7 @@
                                     {% endfor %}
                                     <td class="text-muted small">{{ u['created_at'] | human_date }}</td>
                                     <td class="text-end">
-                                        <form method="post" action="{{ url_for('auth.admin_delete_user', user_id=u['id']) }}" onsubmit="return confirm({{ t('Delete user {name}? This cannot be undone.', name=u['username']) | tojson }});">
+                                        <form method="post" action="{{ url_for('auth.admin_delete_user', user_id=u['id']) }}" data-confirm="{{ t('Delete user {name}? This cannot be undone.', name=u['username']) }}">
                                             <button type="submit" class="btn btn-outline-danger btn-sm" {% if u['id'] == g.user['id'] %}disabled{% endif %}><i class="fas fa-trash"></i></button>
                                         </form>
                                     </td>

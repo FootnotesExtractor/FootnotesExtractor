@@ -24,6 +24,9 @@ RestartSec=5
 # fine — auto-generate is simplest, this is here if you'd rather manage it
 # as a secret through your own tooling).
 # Environment="FLASK_SECRET_KEY=replace-with-a-long-random-value"
+# Behind Caddy (deploy/Caddyfile), which overwrites X-Forwarded-For: trust one hop
+# so the login throttle can count failures per client IP. Leave unset otherwise.
+Environment="FOOTNOTES_TRUSTED_PROXIES=1"
 
 # Hardening: this app only ever needs to read/write its own directory tree
 # (uploads/, results/, models/, app.db, .secret_key) — nothing else on the

@@ -178,6 +178,10 @@ def init_db():
     # auth.set_language. Anonymous/pre-login pages (login/register) fall
     # back to a session-only choice instead — see auth.load_language.
     _ensure_column(conn, 'users', 'language', "language TEXT NOT NULL DEFAULT 'en' CHECK(language IN ('en', 'pl'))")
+    # Bumped on logout and password change (bump_session_version): a session
+    # cookie carries the version it was issued under and stops working once
+    # they differ (auth.load_logged_in_user), so a stolen cookie can be revoked.
+    _ensure_column(conn, 'users', 'session_version', "session_version INTEGER NOT NULL DEFAULT 0")
     # Partial unique index: at most one is_default=1 row per owner. This is
     # also what makes create_default_collection's race-condition handling
     # (two concurrent first-visits) safe — see its docstring.
@@ -299,6 +303,17 @@ def set_password(user_id: int, password: str) -> None:
     db = get_db()
     db.execute('UPDATE users SET password_hash = ? WHERE id = ?', (generate_password_hash(password), user_id))
     db.commit()
+
+
+def bump_session_version(user_id: int) -> int:
+    """Invalidate every session cookie issued for this user so far (see
+    auth.load_logged_in_user); returns the new version for the caller's own
+    session, if it should stay logged in."""
+    db = get_db()
+    db.execute('UPDATE users SET session_version = session_version + 1 WHERE id = ?', (user_id,))
+    db.commit()
+    row = db.execute('SELECT session_version FROM users WHERE id = ?', (user_id,)).fetchone()
+    return row['session_version'] if row else 0
 
 
 def update_profile(user_id: int, first_name: Optional[str], last_name: Optional[str], email: Optional[str]) -> None:

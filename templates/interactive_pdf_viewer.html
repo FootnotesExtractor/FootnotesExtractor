@@ -1676,7 +1676,7 @@
         </div>
     </div>
 
-    <script>
+    <script nonce="{{ csp_nonce }}">
         // Server-computed (db.can_edit_job): admin/owner/group-editor get
         // true; a group *viewer* gets false, and every edit affordance below
         // is hidden/disabled accordingly. This is UX only — the real
@@ -1694,7 +1694,7 @@
         // enough in generated HTML that translating them risks the
         // undo/redo correctness this file was so carefully verified for (see
         // _pushUndoCommand's own comments). Everything reachable from the
-        // server-rendered chrome around this <script> already goes through
+        // server-rendered chrome around this <script nonce="{{ csp_nonce }}"> already goes through
         // Jinja's t() instead; this covers just the JS-only remainder.
         const I18N_LANG = {{ g.lang | tojson }};
         const UNDO_LABELS_PL = {
@@ -2105,6 +2105,17 @@
             'Ibidem': 'Ibidem', 'OpusCitatum': 'Opus citatum',
         };
         const NAME_LABELS_PL = { 'FirstName': 'Imię', 'LastName': 'Nazwisko' };
+        // Every value that comes from a document, a user or another service is
+        // escaped before it goes into HTML, attributes included (hence the quotes).
+        function escHtml(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        // Links from metadata services: http(s) only, never javascript: or data:.
+        function safeUrl(u) {
+            const s = String(u ?? '').trim();
+            return /^https?:\/\//i.test(s) ? s : '';
+        }
         function labelDisplay(label) {
             if (I18N_LANG !== 'pl' || !label) return label;
             return COMPONENT_LABELS_PL[label] || NAME_LABELS_PL[label] || label;
@@ -3030,7 +3041,7 @@
                 const pdfUrl = `/api/v1/documents/${documentId}/pdf`;
 
                 try {
-                    this.pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+                    this.pdf = await pdfjsLib.getDocument({ url: pdfUrl, isEvalSupported: false }).promise;
                     document.getElementById('totalPages').textContent = this.pdf.numPages;
                     document.getElementById('currentPage').max = this.pdf.numPages;
                 } catch (error) {
@@ -3412,11 +3423,11 @@
                         // up last in this list instead of where it actually sits in the text.
                         const orderedReferences = [...footnote.references].sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
                         orderedReferences.forEach((ref, rIdx) => {
-                            html += `<div class='ref-card${this._isReviewFlagged('reference', ref.id) ? ' review-flagged' : ''}' data-ref-card="${ref.id}" style='margin-bottom:8px; padding:6px 6px 6px 0; background:#f8f9fa; border-radius:6px;'>`;
+                            html += `<div class='ref-card${this._isReviewFlagged('reference', ref.id) ? ' review-flagged' : ''}' data-ref-card="${escHtml(ref.id)}" style='margin-bottom:8px; padding:6px 6px 6px 0; background:#f8f9fa; border-radius:6px;'>`;
                             let citationTypeLabel = (ref.citation_type === 'opus_citatum') ? 'opus citatum' : (ref.citation_type || 'normal');
                             const refIsManual = this._isManualAnnotation(ref);
                             const refManualIcon = refIsManual ? `<i class="fas fa-user-edit manual-marker-icon" title="${tjs('Human-added/edited reference')}"></i>` : '';
-                            const refDeleteIcon = CAN_EDIT ? `<i class="fas fa-times ref-delete-icon" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}" title="${tjs('Delete this reference')} (Del)"></i>` : '';
+                            const refDeleteIcon = CAN_EDIT ? `<i class="fas fa-times ref-delete-icon" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}" title="${tjs('Delete this reference')} (Del)"></i>` : '';
                             // A reference holding several works keeps its span and parts;
                             // its works ("Praca", pipeline/reference_split.py) divide it.
                             const works = [...(ref.works || [])].sort((x, y) => x.start - y.start);
@@ -3425,10 +3436,10 @@
                                 ? `<span class="ref-split-marker" title="${tjs('This reference holds several works')}">${tjsFmt('{n} works', { n: works.length })}</span>`
                                 : '';
                             const refSplitIcon = CAN_EDIT
-                                ? `<i class="fas fa-cut ref-split-icon${splitActive ? ' active' : ''}" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}" title="${tjs('Divide into works: click where one work ends')}"></i>`
+                                ? `<i class="fas fa-cut ref-split-icon${splitActive ? ' active' : ''}" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}" title="${tjs('Divide into works: click where one work ends')}"></i>`
                                 : '';
                             const worksJoinIcon = (CAN_EDIT && works.length)
-                                ? `<i class="fas fa-compress-alt works-join-icon" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}" title="${tjs('Join all works back into one reference')}"></i>`
+                                ? `<i class="fas fa-compress-alt works-join-icon" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}" title="${tjs('Join all works back into one reference')}"></i>`
                                 : '';
                             html += `<span class='ref-citation-badge' style='font-weight:bold; color:#444; text-transform:uppercase; background:#f5f5f5; border-radius:6px; padding:2px 8px; font-size:12px; display:inline-block; margin-bottom:2px;'>${refManualIcon}${citationTypeLabel}${worksCount}${refSplitIcon}${worksJoinIcon}${refDeleteIcon}</span>${this._reviewFlagHtml('reference', ref.id)}<br>`;
                             let refConfidence = (typeof ref.confidence === 'number') ? ` <span class='ner-confidence-badge' style='background:#d1e7dd; color:#0f5132; border-radius:6px; padding:1px 6px; font-size:11px; margin-left:6px; display:${document.getElementById('showConfidence').checked ? 'inline-block' : 'none'};'>${(ref.confidence * 100).toFixed(1)}%</span>` : '';
@@ -3473,19 +3484,19 @@
                                     const compManualIcon = compIsManual ? `<i class="fas fa-user-edit manual-marker-icon" title="${tjs('Human-added/edited component')}"></i>` : '';
                                     let deleteIcon = '';
                                     if (CAN_EDIT && !comp.inferred && comp.id) {
-                                        deleteIcon = ` <i class="fas fa-times comp-delete-icon" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}" data-comp-id="${comp.id}" title="${tjs('Delete this component')} (Del)"></i>`;
+                                        deleteIcon = ` <i class="fas fa-times comp-delete-icon" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}" data-comp-id="${escHtml(comp.id)}" title="${tjs('Delete this component')} (Del)"></i>`;
                                     }
                                     let inferredBadge = '';
                                     if (comp.inheritedSplit) {
                                         inferredBadge = ` <span class='inherited-badge' title="${tjs('Not in the text, carried over from the previous work')}">${tjs('carried over')}</span>`;
                                         if (CAN_EDIT && workId) {
-                                            deleteIcon = ` <i class="fas fa-times inherited-remove-icon" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}" data-work-id="${workId}" data-source-id="${comp.source_component_id || ''}" title="${tjs('Stop carrying this over')}"></i>`;
+                                            deleteIcon = ` <i class="fas fa-times inherited-remove-icon" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}" data-work-id="${workId}" data-source-id="${comp.source_component_id || ''}" title="${tjs('Stop carrying this over')}"></i>`;
                                         }
                                     } else if (comp.inferred) {
                                         inferredBadge = ` <span style='background:#ffe5b4; color:#a66f00; border-radius:6px; padding:1px 6px; font-size:11px; margin-left:2px;'>${tjs('inferred')}</span>`;
                                         // taken out of what this ibid./op. cit. takes over
                                         if (CAN_EDIT) {
-                                            deleteIcon = ` <i class="fas fa-times inferred-remove-icon" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}" data-label="${this._escapeHtml(label)}" data-text="${this._escapeHtml(comp.text || '')}" title="${tjs('Do not take this over')}"></i>`;
+                                            deleteIcon = ` <i class="fas fa-times inferred-remove-icon" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}" data-label="${this._escapeHtml(label)}" data-text="${this._escapeHtml(comp.text || '')}" title="${tjs('Do not take this over')}"></i>`;
                                         }
                                     }
                                     let confidenceBadge = '';
@@ -3494,7 +3505,7 @@
                                     }
 
                                     const chipEdge = comp.inheritedSplit ? ` border:1px dashed ${textColor}; opacity:0.85;` : '';
-                                    const chip = `<span class='comp-chip' style='background:${bgColor}; border-radius:8px; padding:2px 8px; font-size:12px; color:${textColor};${chipEdge}'>${compManualIcon}<span style='font-weight:bold;'>${labelDisplay(label)}</span>: ${comp.text}${inferredBadge}${confidenceBadge}${deleteIcon}</span>`;
+                                    const chip = `<span class='comp-chip' style='background:${bgColor}; border-radius:8px; padding:2px 8px; font-size:12px; color:${textColor};${chipEdge}'>${compManualIcon}<span style='font-weight:bold;'>${escHtml(labelDisplay(label))}</span>: ${escHtml(comp.text)}${inferredBadge}${confidenceBadge}${deleteIcon}</span>`;
 
                                     let namesBlock = '';
                                     if (comp.names && comp.names.length > 0) {
@@ -3504,10 +3515,10 @@
                                                 const nameIsManual = this._isManualAnnotation(name);
                                                 const nameManualIcon = nameIsManual ? `<i class="fas fa-user-edit manual-marker-icon" title="${tjs('Human-added/edited name')}"></i>` : '';
                                                 const nameDeleteIcon = (CAN_EDIT && name.id && !name.inheritedSplit)
-                                                    ? ` <i class="fas fa-times name-delete-icon" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}" data-comp-id="${comp.id}" data-name-id="${name.id}" title="${tjs('Delete this name')} (Del)"></i>`
+                                                    ? ` <i class="fas fa-times name-delete-icon" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}" data-comp-id="${escHtml(comp.id)}" data-name-id="${escHtml(name.id)}" title="${tjs('Delete this name')} (Del)"></i>`
                                                     : '';
                                                 const nameEdge = name.inheritedSplit ? ` border:1px dashed ${nameColors.fg}; opacity:0.85;` : '';
-                                                return `<span class='comp-chip' style='background:${nameColors.bg}; border-radius:8px; padding:1px 6px; font-size:11px; color:${nameColors.fg};${nameEdge}'>${nameManualIcon}<span style='font-weight:bold;'>${labelDisplay(name.label)}</span>: ${name.text}${nameDeleteIcon}</span>`;
+                                                return `<span class='comp-chip' style='background:${nameColors.bg}; border-radius:8px; padding:1px 6px; font-size:11px; color:${nameColors.fg};${nameEdge}'>${nameManualIcon}<span style='font-weight:bold;'>${escHtml(labelDisplay(name.label))}</span>: ${escHtml(name.text)}${nameDeleteIcon}</span>`;
                                             }).join('') +
                                             `</div>`;
                                     }
@@ -3522,10 +3533,10 @@
                                     const list = [...allComponents.filter(c => inWork(c, w)), ...this._resolvedInherited(footnote, w)];
                                     const prevW = wIdx > 0 ? works[wIdx - 1] : null;
                                     const mergeIcon = (CAN_EDIT && prevW)
-                                        ? `<i class="fas fa-compress-alt work-merge-icon" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}" data-work-id="${w.id}" data-prev-id="${prevW.id}" title="${tjs('Merge with the previous work')}"></i>`
+                                        ? `<i class="fas fa-compress-alt work-merge-icon" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}" data-work-id="${escHtml(w.id)}" data-prev-id="${escHtml(prevW.id)}" title="${tjs('Merge with the previous work')}"></i>`
                                         : '';
                                     const howTitle = w.how === 'auto' ? tjs('Divided automatically; merge to undo') : tjs('Divided by hand; merge to undo');
-                                    html += `<div class='work-card' data-work-id="${w.id}">`;
+                                    html += `<div class='work-card' data-work-id="${escHtml(w.id)}">`;
                                     html += `<span class='work-badge' title="${howTitle}">${tjsFmt('Work {i}/{n}', { i: wIdx + 1, n: works.length })}${mergeIcon}</span>`;
                                     html += ` <span class='work-text'>“${this._escapeHtml((footnote.text || '').slice(w.start, w.end))}”</span>`;
                                     html += this._refListChip(w.id);
@@ -3537,7 +3548,7 @@
                                         const prevHas = new Set([...allComponents.filter(c => inWork(c, prevW)), ...(prevW.inherited || [])].map(c => c.label));
                                         const offer = CARRY_OVER_LABELS.filter(l => prevHas.has(l) && !have.has(l));
                                         if (offer.length) {
-                                            html += `<a href="#" class="inherit-prev-link" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}" data-work-id="${w.id}" data-labels="${offer.join(',')}"><i class="fas fa-level-down-alt"></i> ${tjsFmt('Carry over from the previous work: {fields}', { fields: offer.map(labelDisplay).join(', ') })}</a>`;
+                                            html += `<a href="#" class="inherit-prev-link" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}" data-work-id="${escHtml(w.id)}" data-labels="${offer.join(',')}"><i class="fas fa-level-down-alt"></i> ${tjsFmt('Carry over from the previous work: {fields}', { fields: offer.map(labelDisplay).join(', ') })}</a>`;
                                         }
                                     }
                                     html += `</div>`;
@@ -3552,7 +3563,7 @@
                             }
                             // the source's other parts, to take over by hand
                             if (CAN_EDIT && (ref.citation_type === 'ibidem' || ref.citation_type === 'opus_citatum') && (ref.inference_left_out || []).length) {
-                                html += `<a href="#" class="inferred-add-link" data-footnote-id="${footnote.id}" data-ref-id="${ref.id}"><i class="fas fa-plus"></i> ${tjs('Take over another part of the source')}</a>`;
+                                html += `<a href="#" class="inferred-add-link" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(ref.id)}"><i class="fas fa-plus"></i> ${tjs('Take over another part of the source')}</a>`;
                             }
 
                             if (USER_FEATURES.metadata_enrichment && ref.external_metadata && Object.keys(ref.external_metadata).length > 0) {
@@ -3569,38 +3580,38 @@
                                     items.forEach((item, idx) => {
                                         let details = '';
                                         if (source === 'google_books' && item.volumeInfo) {
-                                            details += `<span style='font-weight:bold;'>${item.volumeInfo.title || ''}</span>`;
-                                            if (item.volumeInfo.authors) details += ` by ${item.volumeInfo.authors.join(', ')}`;
+                                            details += `<span style='font-weight:bold;'>${escHtml(item.volumeInfo.title || '')}</span>`;
+                                            if (item.volumeInfo.authors) details += ` by ${escHtml(item.volumeInfo.authors.join(', '))}`;
                                             if (item.volumeInfo.publisher || item.volumeInfo.publishedDate) {
-                                                details += ` (${[item.volumeInfo.publisher, item.volumeInfo.publishedDate].filter(Boolean).join(', ')})`;
+                                                details += ` (${escHtml([item.volumeInfo.publisher, item.volumeInfo.publishedDate].filter(Boolean).join(', '))})`;
                                             }
                                             if (item.volumeInfo.industryIdentifiers) {
                                                 const isbns = item.volumeInfo.industryIdentifiers.map(i => i.identifier).join(', ');
-                                                if (isbns) details += ` - ISBN: ${isbns}`;
+                                                if (isbns) details += ` - ISBN: ${escHtml(isbns)}`;
                                             }
-                                            if (item.volumeInfo.infoLink) details += ` <a href="${item.volumeInfo.infoLink}" target="_blank"><i class="fas fa-external-link-alt"></i></a>`;
+                                            if (safeUrl(item.volumeInfo.infoLink)) details += ` <a href="${escHtml(safeUrl(item.volumeInfo.infoLink))}" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt"></i></a>`;
                                         } else if (source === 'crossref') {
-                                            details += `<span style='font-weight:bold;'>${item.title ? item.title[0] : ''}</span>`;
+                                            details += `<span style='font-weight:bold;'>${escHtml(item.title ? item.title[0] : '')}</span>`;
                                             if (item.author) {
                                                 const authors = item.author.map(a => `${a.given || ''} ${a.family || ''}`.trim()).filter(Boolean).join(', ');
-                                                if (authors) details += ` by ${authors}`;
+                                                if (authors) details += ` by ${escHtml(authors)}`;
                                             }
-                                            if (item.publisher) details += ` (${item.publisher})`;
+                                            if (item.publisher) details += ` (${escHtml(item.publisher)})`;
                                             if (item.issued && item.issued['date-parts']) {
-                                                details += ` - Year: ${item.issued['date-parts'][0][0]}`;
+                                                details += ` - Year: ${escHtml(item.issued['date-parts'][0][0])}`;
                                             }
-                                            if (item['container-title']) details += ` - <em>${item['container-title'][0]}</em>`;
-                                            if (item.type) details += ` [${item.type}]`;
-                                            if (item.DOI) details += ` - DOI: ${item.DOI}`;
-                                            if (item.URL) details += ` <a href="${item.URL}" target="_blank"><i class="fas fa-external-link-alt"></i></a>`;
+                                            if (item['container-title']) details += ` - <em>${escHtml(item['container-title'][0])}</em>`;
+                                            if (item.type) details += ` [${escHtml(item.type)}]`;
+                                            if (item.DOI) details += ` - DOI: ${escHtml(item.DOI)}`;
+                                            if (safeUrl(item.URL)) details += ` <a href="${escHtml(safeUrl(item.URL))}" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt"></i></a>`;
                                         } else if (source === 'openaire') {
-                                            details += `<span style='font-weight:bold;'>${item.title || 'Unknown Title'}</span>`;
+                                            details += `<span style='font-weight:bold;'>${escHtml(item.title || 'Unknown Title')}</span>`;
                                             if (item.creator && item.creator.length > 0) {
-                                                details += ` by ${item.creator.join(', ')}`;
+                                                details += ` by ${escHtml(item.creator.join(', '))}`;
                                             }
-                                            if (item.publisher) details += ` (${item.publisher})`;
+                                            if (item.publisher) details += ` (${escHtml(item.publisher)})`;
                                             if (item.dateofacceptance) {
-                                                details += ` - Year: ${item.dateofacceptance.substring(0, 4)}`;
+                                                details += ` - Year: ${escHtml(item.dateofacceptance.substring(0, 4))}`;
                                             }
                                         }
                                         let borderStyle = idx < items.length - 1 ? "border-bottom: 1px dashed #ccc;" : "";
@@ -3649,10 +3660,7 @@
             }
 
             _escapeHtml(s) {
-                return s
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;');
+                return escHtml(s);
             }
 
             // Renders text.slice(rangeStart, rangeEnd) as escaped text interleaved
@@ -3672,7 +3680,7 @@
                 works.forEach((w, i) => {
                     if (w.start < pos) return;
                     html += this._buildComponentSpansHtml(text, pos, w.start, ref.components);
-                    html += `<span class="work-span" data-work-id="${w.id}" data-start="${w.start}" data-end="${w.end}" title="${tjsFmt('Work {i}/{n}', { i: i + 1, n: works.length })}">`;
+                    html += `<span class="work-span" data-work-id="${escHtml(w.id)}" data-start="${w.start}" data-end="${w.end}" title="${tjsFmt('Work {i}/{n}', { i: i + 1, n: works.length })}">`;
                     html += this._buildComponentSpansHtml(text, w.start, w.end, ref.components);
                     html += `</span>`;
                     pos = w.end;
@@ -3713,7 +3721,7 @@
                         ? tjsFmt('Layout Assist: this book usually labels this as {label}', { label: labelDisplay(nerFlag.suggested_label) })
                         : check ? this._checkMessage(check, true)
                         : (compIsManual ? tjs('Human-added/edited component') : '');
-                    html += `<span class="comp-span${nerFlag || check ? ' la-flagged' : ''}" data-comp-id="${comp.id}" data-start="${comp.start}" data-end="${comp.end}" style="background:${colors.bg};color:${colors.fg};" title="${this._escapeHtml(compTitle)}">`;
+                    html += `<span class="comp-span${nerFlag || check ? ' la-flagged' : ''}" data-comp-id="${escHtml(comp.id)}" data-start="${comp.start}" data-end="${comp.end}" style="background:${colors.bg};color:${colors.fg};" title="${this._escapeHtml(compTitle)}">`;
                     let innerPos = comp.start;
                     names.forEach(name => {
                         if (name.start < innerPos) return;
@@ -3730,7 +3738,7 @@
                         const nameTitle = nameIsManual
                             ? `${labelDisplay(name.label)} — ${tjs('Human-added/edited name')}`
                             : labelDisplay(name.label);
-                        html += `<span class="name-span" data-name-id="${name.id}" data-start="${name.start}" data-end="${name.end}" style="background:${nameFill}; box-shadow: 0 -4px 0 0 ${nameColors.bg};" title="${nameTitle}">${escapeHtml(text.slice(name.start, name.end))}</span>`;
+                        html += `<span class="name-span" data-name-id="${escHtml(name.id)}" data-start="${escHtml(name.start)}" data-end="${escHtml(name.end)}" style="background:${nameFill}; box-shadow: 0 -4px 0 0 ${nameColors.bg};" title="${escHtml(nameTitle)}">${escapeHtml(text.slice(name.start, name.end))}</span>`;
                         innerPos = name.end;
                     });
                     html += escapeHtml(text.slice(innerPos, comp.end));
@@ -3781,7 +3789,7 @@
                 if (!(total > 1) && !toPrev && !toNext) return '';
                 const button = (dir, title, icon, { disabled = false, cross = false } = {}) =>
                     `<button type="button" class="footnote-reorder-btn${cross ? ' footnote-reorder-btn--page' : ''}"`
-                    + ` data-reorder-dir="${dir}" data-footnote-id="${footnote.id}"${disabled ? ' disabled' : ''}`
+                    + ` data-reorder-dir="${dir}" data-footnote-id="${escHtml(footnote.id)}"${disabled ? ' disabled' : ''}`
                     + ` title="${title}"><i class="fas ${icon}"></i></button>`;
                 const up = toPrev
                     ? button('prev-page', tjsFmt('Move to the end of page {page}', { page: page - 1 }), 'fa-angle-double-up', { cross: true })
@@ -3809,7 +3817,7 @@
                 // a keystroke apart in intent but worlds apart in blast radius,
                 // and the pencil is the one people reach for constantly.
                 const deleteIcon = CAN_EDIT
-                    ? `<i class="fas fa-times footnote-delete-icon" data-footnote-id="${footnote.id}" title="${tjs('Remove this block')}"></i>`
+                    ? `<i class="fas fa-times footnote-delete-icon" data-footnote-id="${escHtml(footnote.id)}" title="${tjs('Remove this block')}"></i>`
                     : '';
                 const movedNote = (footnote.list_page != null && footnote.list_page !== footnote.page)
                     ? ` <span class="footnote-order-manual-note" title="${tjsFmt('Moved here from page {page}; its box is still drawn there', { page: footnote.page })}">${tjsFmt('box on page {page}', { page: footnote.page })}</span>`
@@ -3818,7 +3826,7 @@
                 html += `${manualMarker}<strong>${tjs('Text:')}</strong>${deleteIcon}${orderedNote}${movedNote} `;
                 html += `<span style='color:#000;'>"${this.buildFootnoteHtml(footnote)}"</span>`;
                 if (CAN_EDIT) {
-                    html += `<i class="fas fa-pencil-alt footnote-edit-text-icon" data-footnote-id="${footnote.id}" title="${tjs('Edit, split, or merge this footnote')}"></i>`;
+                    html += `<i class="fas fa-pencil-alt footnote-edit-text-icon" data-footnote-id="${escHtml(footnote.id)}" title="${tjs('Edit, split, or merge this footnote')}"></i>`;
                 }
                 html += approxBadge;
                 html += `</div>`;
@@ -3838,7 +3846,7 @@
                 // supplies the hover tooltip, since the dashed outline this used
                 // to draw was dropped as too noisy over the nested span colours.
                 const manualTitle = this._manualFootnoteTitle(footnote);
-                let html = `<span class="footnote-text-root" data-footnote-id="${footnote.id}" data-start="0"${manualTitle ? ` title="${manualTitle}"` : ''}>`;
+                let html = `<span class="footnote-text-root" data-footnote-id="${escHtml(footnote.id)}" data-start="0"${manualTitle ? ` title="${manualTitle}"` : ''}>`;
                 let pos = 0;
 
                 refs.forEach(ref => {
@@ -3846,7 +3854,7 @@
                     html += escapeHtml(text.slice(pos, ref.start));
 
                     const refIsManual = this._isManualAnnotation(ref);
-                    html += `<span class="ref-span" data-ref-id="${ref.id}" data-start="${ref.start}" data-end="${ref.end}" title="${refIsManual ? tjs('Human-added/edited reference') : ''}">`;
+                    html += `<span class="ref-span" data-ref-id="${escHtml(ref.id)}" data-start="${ref.start}" data-end="${ref.end}" title="${refIsManual ? tjs('Human-added/edited reference') : ''}">`;
                     html += this._buildRefContentHtml(text, ref);
                     html += `</span>`; // close ref-span
 
@@ -3870,7 +3878,7 @@
                     return escapeHtml(reference.text || '');
                 }
 
-                let html = `<span class="reference-text-root" data-footnote-id="${footnote.id}" data-ref-id="${reference.id}" data-start="${reference.start}">`;
+                let html = `<span class="reference-text-root" data-footnote-id="${escHtml(footnote.id)}" data-ref-id="${escHtml(reference.id)}" data-start="${reference.start}">`;
                 html += this._buildRefContentHtml(text, reference);
                 html += `</span>`; // close reference-text-root
                 return html;
@@ -5237,8 +5245,8 @@
                     // The source author's first/last names come along (exports use
                     // them too); shown read-only, they're edited on the source.
                     const names = (src && src.names || []).map(n => ({ label: n.label, start: n.start,
-                        text: this._escapeHtml(text.slice(n.start, n.end) || n.text || ''), inheritedSplit: true }));
-                    return { label: h.label, text: this._escapeHtml(t || h.text || ''), source_component_id: h.source_component_id,
+                        text: text.slice(n.start, n.end) || n.text || '', inheritedSplit: true }));
+                    return { label: h.label, text: t || h.text || '', source_component_id: h.source_component_id,
                              names, inferred: true, inheritedSplit: true };
                 });
             }
@@ -8224,7 +8232,7 @@
                         if (ref.components && ref.components.length > 0) {
                             [...ref.components].sort((a, b) => (a.start ?? 0) - (b.start ?? 0)).forEach(comp => {
                                 if (comp.text && comp.text.trim()) {
-                                    html += `<span class="component-tag component-${comp.type.toLowerCase()}">${labelDisplay(comp.type)}: ${comp.text}</span>`;
+                                    html += `<span class="component-tag component-${escHtml(comp.type.toLowerCase())}">${escHtml(labelDisplay(comp.type))}: ${escHtml(comp.text)}</span>`;
                                 }
                             });
                         }
@@ -8346,7 +8354,7 @@
 
             _referenceSourceBadge(source) {
                 const name = REFERENCE_LIST_SOURCES[source] || source;
-                return `<span class="grobid-source-badge">${String(name).replace(/</g, '&lt;')}</span>`;
+                return `<span class="grobid-source-badge">${escHtml(name)}</span>`;
             }
 
             addReferenceOverlays(container, pageNum, viewport) {
@@ -8409,7 +8417,7 @@
                         <strong>${tjs('Parsed Components:')}</strong><br>`;
                     ref.components.forEach(comp => {
                         const colors = this._getComponentColor(comp.label);
-                        html += `<span style="display:inline-block; background:${colors.bg}; color:${colors.fg}; border-radius:8px; padding:2px 7px; font-size:11px; margin:2px;"><strong>${labelDisplay(comp.label)}</strong>: ${comp.text}</span>`;
+                        html += `<span style="display:inline-block; background:${colors.bg}; color:${colors.fg}; border-radius:8px; padding:2px 7px; font-size:11px; margin:2px;"><strong>${escHtml(labelDisplay(comp.label))}</strong>: ${escHtml(comp.text)}</span>`;
                     });
                     html += `</div>`;
                 }
@@ -9048,7 +9056,7 @@
                     const c = this._componentColor(label);
                     for (const value of people.has(key) ? this._splitPeople(f[key]) : [f[key]]) {
                         const x = editable ? ` <i class="fas fa-times reflist-field-x" data-field-remove="${key}" data-value="${this._escapeHtml(value)}" data-entry-id="${this._escapeHtml(e.id)}" title="${tjs('Remove this tag')}"></i>` : '';
-                        html += `<span class="reflist-field" style="background:${c.bg}; color:${c.fg};"><strong>${labelDisplay(label)}</strong>: ${this._escapeHtml(value)}${x}</span>`;
+                        html += `<span class="reflist-field" style="background:${c.bg}; color:${c.fg};"><strong>${escHtml(labelDisplay(label))}</strong>: ${this._escapeHtml(value)}${x}</span>`;
                     }
                 }
                 return html;
@@ -9072,7 +9080,7 @@
                     if (m.s < at) continue;
                     const c = this._componentColor(m.label);
                     html += this._escapeHtml(text.slice(at, m.s))
-                        + `<span class="reflist-mark" style="background:${c.bg}; color:${c.fg};" title="${labelDisplay(m.label)}">${this._escapeHtml(text.slice(m.s, m.e))}</span>`;
+                        + `<span class="reflist-mark" style="background:${c.bg}; color:${c.fg};" title="${escHtml(labelDisplay(m.label))}">${this._escapeHtml(text.slice(m.s, m.e))}</span>`;
                     at = m.e;
                 }
                 return html + this._escapeHtml(text.slice(at));
@@ -9303,7 +9311,7 @@
                 const tag = (c, note) => {
                     const col = this._componentColor(c.label);
                     const edge = note ? ` border:1px dashed ${col.fg};` : '';
-                    return `<span class="reflist-field" style="background:${col.bg}; color:${col.fg};${edge}"><strong>${labelDisplay(c.label)}</strong>: ${this._escapeHtml(c.text || '')}${note ? ` <em class="small">${note}</em>` : ''}</span>`;
+                    return `<span class="reflist-field" style="background:${col.bg}; color:${col.fg};${edge}"><strong>${escHtml(labelDisplay(c.label))}</strong>: ${this._escapeHtml(c.text || '')}${note ? ` <em class="small">${note}</em>` : ''}</span>`;
                 };
                 return [...(u.parts || [])].sort((a, b) => (a.start ?? 0) - (b.start ?? 0)).map(c => tag(c, ''))
                     .concat((u.carried || []).map(c => tag(c, tjs('carried over'))))
@@ -9458,7 +9466,7 @@
                 menu.dataset.refId = link.dataset.refId;
                 menu.innerHTML = `<h6 class="dropdown-header">${tjs('Take over from the source')}</h6>` + (ref.inference_left_out || []).map(c => {
                     const col = this._componentColor(c.label);
-                    return `<a class="dropdown-item small" href="#" data-label="${this._escapeHtml(c.label)}" data-text="${this._escapeHtml(c.text || '')}"><span class="reflist-field" style="background:${col.bg}; color:${col.fg};"><strong>${labelDisplay(c.label)}</strong>: ${this._escapeHtml(c.text || '')}</span></a>`;
+                    return `<a class="dropdown-item small" href="#" data-label="${this._escapeHtml(c.label)}" data-text="${this._escapeHtml(c.text || '')}"><span class="reflist-field" style="background:${col.bg}; color:${col.fg};"><strong>${escHtml(labelDisplay(c.label))}</strong>: ${this._escapeHtml(c.text || '')}</span></a>`;
                 }).join('');
                 const r = link.getBoundingClientRect();
                 menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 340)) + 'px';
@@ -9737,10 +9745,10 @@
                             if (comp.names && comp.names.length > 0) {
                                 namesHtml = " <span style='margin-left:4px;'>(" + comp.names.map(name => {
                                     let nameColor = name.label === 'FirstName' ? '#ad1457' : '#0d47a1';
-                                    return `<span style='font-style:italic; font-size:11px; color:${nameColor};'>${labelDisplay(name.label)}: ${name.text}</span>`;
+                                    return `<span style='font-style:italic; font-size:11px; color:${nameColor};'>${escHtml(labelDisplay(name.label))}: ${escHtml(name.text)}</span>`;
                                 }).join(', ') + ")</span>";
                             }
-                            html += `<span style='background:${colors.bg}; border-radius:8px; padding:2px 8px; font-size:12px; color:${colors.fg};'><span style='font-weight:bold;'>${labelDisplay(comp.label)}</span>: ${comp.text}${namesHtml}</span>`;
+                            html += `<span style='background:${colors.bg}; border-radius:8px; padding:2px 8px; font-size:12px; color:${colors.fg};'><span style='font-weight:bold;'>${escHtml(labelDisplay(comp.label))}</span>: ${escHtml(comp.text)}${namesHtml}</span>`;
                         });
                         html += `</div>`;
                     }
@@ -9759,38 +9767,38 @@
                             items.forEach((item, idx) => {
                                 let details = '';
                                 if (source === 'google_books' && item.volumeInfo) {
-                                    details += `<span style='font-weight:bold;'>${item.volumeInfo.title || ''}</span>`;
-                                    if (item.volumeInfo.authors) details += ` by ${item.volumeInfo.authors.join(', ')}`;
+                                    details += `<span style='font-weight:bold;'>${escHtml(item.volumeInfo.title || '')}</span>`;
+                                    if (item.volumeInfo.authors) details += ` by ${escHtml(item.volumeInfo.authors.join(', '))}`;
                                     if (item.volumeInfo.publisher || item.volumeInfo.publishedDate) {
-                                        details += ` (${[item.volumeInfo.publisher, item.volumeInfo.publishedDate].filter(Boolean).join(', ')})`;
+                                        details += ` (${escHtml([item.volumeInfo.publisher, item.volumeInfo.publishedDate].filter(Boolean).join(', '))})`;
                                     }
                                     if (item.volumeInfo.industryIdentifiers) {
                                         const isbns = item.volumeInfo.industryIdentifiers.map(i => i.identifier).join(', ');
-                                        if (isbns) details += ` - ISBN: ${isbns}`;
+                                        if (isbns) details += ` - ISBN: ${escHtml(isbns)}`;
                                     }
-                                    if (item.volumeInfo.infoLink) details += ` <a href="${item.volumeInfo.infoLink}" target="_blank"><i class="fas fa-external-link-alt"></i></a>`;
+                                    if (safeUrl(item.volumeInfo.infoLink)) details += ` <a href="${escHtml(safeUrl(item.volumeInfo.infoLink))}" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt"></i></a>`;
                                 } else if (source === 'crossref') {
-                                    details += `<span style='font-weight:bold;'>${item.title ? item.title[0] : ''}</span>`;
+                                    details += `<span style='font-weight:bold;'>${escHtml(item.title ? item.title[0] : '')}</span>`;
                                     if (item.author) {
                                         const authors = item.author.map(a => `${a.given || ''} ${a.family || ''}`.trim()).filter(Boolean).join(', ');
-                                        if (authors) details += ` by ${authors}`;
+                                        if (authors) details += ` by ${escHtml(authors)}`;
                                     }
-                                    if (item.publisher) details += ` (${item.publisher})`;
+                                    if (item.publisher) details += ` (${escHtml(item.publisher)})`;
                                     if (item.issued && item.issued['date-parts']) {
-                                        details += ` - Year: ${item.issued['date-parts'][0][0]}`;
+                                        details += ` - Year: ${escHtml(item.issued['date-parts'][0][0])}`;
                                     }
-                                    if (item['container-title']) details += ` - <em>${item['container-title'][0]}</em>`;
-                                    if (item.type) details += ` [${item.type}]`;
-                                    if (item.DOI) details += ` - DOI: ${item.DOI}`;
-                                    if (item.URL) details += ` <a href="${item.URL}" target="_blank"><i class="fas fa-external-link-alt"></i></a>`;
+                                    if (item['container-title']) details += ` - <em>${escHtml(item['container-title'][0])}</em>`;
+                                    if (item.type) details += ` [${escHtml(item.type)}]`;
+                                    if (item.DOI) details += ` - DOI: ${escHtml(item.DOI)}`;
+                                    if (safeUrl(item.URL)) details += ` <a href="${escHtml(safeUrl(item.URL))}" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt"></i></a>`;
                                 } else if (source === 'openaire') {
-                                    details += `<span style='font-weight:bold;'>${item.title || 'Unknown Title'}</span>`;
+                                    details += `<span style='font-weight:bold;'>${escHtml(item.title || 'Unknown Title')}</span>`;
                                     if (item.creator && item.creator.length > 0) {
-                                        details += ` by ${item.creator.join(', ')}`;
+                                        details += ` by ${escHtml(item.creator.join(', '))}`;
                                     }
-                                    if (item.publisher) details += ` (${item.publisher})`;
+                                    if (item.publisher) details += ` (${escHtml(item.publisher)})`;
                                     if (item.dateofacceptance) {
-                                        details += ` - Year: ${item.dateofacceptance.substring(0, 4)}`;
+                                        details += ` - Year: ${escHtml(item.dateofacceptance.substring(0, 4))}`;
                                     }
                                 }
                                 let borderStyle = idx < items.length - 1 ? "border-bottom: 1px dashed #ccc;" : "";

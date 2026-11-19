@@ -51,7 +51,7 @@ def api_upload_documents():
     either a single 'file' field or a repeated 'files' field (matching the
     browser form's field name), so a simple `curl -F file=@paper.pdf` works."""
     from app import (_process_upload, _upload_limit_error, _validate_model_selection, _limit_upload_options, _resolve_grobid_url, allowed_file, BOOK_METADATA_FIELDS,
-                     DEFAULT_OD_MODEL, DEFAULT_NER_SUITE)
+                     DEFAULT_OD_MODEL, DEFAULT_NER_SUITE, _numeric_upload_options)
 
     files = [f for f in request.files.getlist('files') if f and f.filename]
     if not files:
@@ -72,13 +72,13 @@ def api_upload_documents():
     def _flag_default_true(name):
         return form.get(name, 'true').strip().lower() not in ('0', 'false', 'no', 'off')
 
+    numeric, numeric_error = _numeric_upload_options(form)
+    if numeric_error:
+        return jsonify({'error': numeric_error}), 400
     options = {
         'debug': _flag('debug'),
         'cpu_mode': _flag('cpu_mode'),
-        'od_conf': float(form.get('od_conf', 0.5)),
-        'ref_conf': float(form.get('ref_conf', 0.7)),
-        'comp_conf': float(form.get('comp_conf', 0.7)),
-        'batch_size': int(form.get('batch_size', 8)),
+        **numeric,
         'od_model': form.get('od_model', DEFAULT_OD_MODEL),
         'ner_suite': form.get('ner_suite', DEFAULT_NER_SUITE),
         'enable_grobid': _flag('enable_grobid'),
@@ -110,6 +110,8 @@ def api_upload_documents():
         return jsonify({'error': 'collection_id must be an integer'}), 400
     if collection_id is not None and not db.can_access_collection(g.user, collection_id):
         return jsonify({'error': 'Collection not found'}), 404
+    if collection_id is not None and not db.can_edit_collection(g.user, collection_id):
+        return jsonify({'error': 'You have view-only access to this collection'}), 403
 
     # Optional book metadata (authors/title/year/publisher/license) — all
     # optional, shared across every file in this upload batch. See
@@ -340,6 +342,10 @@ def api_add_job_to_collection(collection_id):
     job_id = (payload.get('job_id') or '').strip()
     if not job_id or not db.can_access_job(g.user, job_id):
         return jsonify({'error': 'Job not found'}), 404
+    # Filing a job into a collection shares it with the collection's group,
+    # so it needs edit rights on the job, not just view rights.
+    if not db.can_edit_job(g.user, job_id):
+        return jsonify({'error': 'You have view-only access to this job'}), 403
     db.add_job_to_collection(collection_id, job_id)
     return jsonify({'success': True})
 

@@ -63,7 +63,8 @@ needs more than the minimum above. Choose it under **Advanced Options** when you
 a server: use HTTPS there and leave it out.
 
 The first account you register becomes the administrator, who creates all further accounts in
-**Admin → Users**.
+**Admin → Users**. Registering it needs the one-time setup token the app prints in its log on the
+first visit to `/register` (also saved as `setup_token.txt` next to `app.db`).
 
 ## Use
 

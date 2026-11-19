@@ -270,11 +270,15 @@ class PDFExtractorApp {
         alert.style.zIndex = '9999';
         alert.style.maxWidth = '400px';
         
-        alert.innerHTML = `
-            <strong>${type === 'danger' ? 'Error!' : type === 'success' ? 'Success!' : 'Info:'}</strong>
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
+        // The message is text (it can carry a server error or a file name), so
+        // it goes in as a text node, never as HTML.
+        const label = document.createElement('strong');
+        label.textContent = type === 'danger' ? 'Error!' : type === 'success' ? 'Success!' : 'Info:';
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'btn-close';
+        close.setAttribute('data-bs-dismiss', 'alert');
+        alert.append(label, ' ', String(message), ' ', close);
         
         alertContainer.appendChild(alert);
         

@@ -100,6 +100,35 @@ curl -I https://yourdomain.example/login   # expect: HTTP/2 200
 Open `https://yourdomain.example/register` in a browser. The first account you create becomes the
 administrator, and registration then closes. You create every further account in **Admin → Users**.
 
+Registering the first account needs a one-time setup token, so that nobody who reaches a fresh
+install before you can claim it. The app writes the token to its log on the first visit to
+`/register` and saves it as `setup_token.txt` next to `app.db`, readable only by the app's user:
+
+```bash
+journalctl -u footnotes-app | grep -i "setup token"
+```
+
+The file is deleted once the account exists.
+
+## Security notes
+
+- **Client IPs.** The app listens on 127.0.0.1 only. With Caddy in front, which overwrites
+  `X-Forwarded-For` with the client's address, `FOOTNOTES_TRUSTED_PROXIES=1` (set in the systemd
+  unit) lets the login throttle count failures per IP as well as per account. Leave it unset when
+  there is no proxy in front of the app.
+- **Headers.** Every page gets a Content-Security-Policy with a per-request nonce (no inline event
+  handlers or scripts without the nonce run), plus `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy` and `Permissions-Policy`. HSTS is left to the proxy.
+- **Sessions.** Logging out ends every session of the account, and changing the password ends
+  every other session, so a copied session cookie stops working.
+- **Deleting a job** also deletes its uploaded PDF and its files in `results/`.
+- **Dependencies.** `requirements.txt` pins the direct dependencies and `requirements.lock` every
+  installed package. Check them with `pip-audit -r requirements.lock --no-deps --disable-pip`.
+  Pillow and transformers stay at the versions Surya OCR 0.8.3 needs (Pillow < 11,
+  transformers < 4.45); their open advisories concern decoding untrusted images and loading
+  untrusted model files, while the app loads only its own models and hands Pillow pages rendered
+  by PyMuPDF.
+
 ## Updating
 
 ```bash

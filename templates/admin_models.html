@@ -63,7 +63,7 @@
                                     <input type="hidden" name="model_key" value="{{ key }}">
                                     <div class="form-check form-switch mb-0">
                                         <input class="form-check-input" type="checkbox" role="switch"
-                                               name="enabled" value="1" onchange="this.form.submit()"
+                                               name="enabled" value="1" data-autosubmit
                                                {% if model.status == 'available' %}checked{% endif %}>
                                         <input type="hidden" name="enabled" value="0">
                                     </div>
@@ -82,7 +82,7 @@
                                     <input type="hidden" name="model_type" value="{{ model_type }}">
                                     <input type="hidden" name="model_key" value="{{ key }}">
                                     <input type="number" name="instances" class="form-control form-control-sm" style="width:64px;"
-                                           min="1" max="{{ pool.max }}" value="{{ copies }}" onchange="this.form.submit()"
+                                           min="1" max="{{ pool.max }}" value="{{ copies }}" data-autosubmit
                                            aria-label="{{ t('Instances') }}">
                                 </form>
                                 {% endif %}

@@ -536,6 +536,9 @@ PL = {
     'Too many failed attempts for this account. Try again in a few minutes.':
         'Zbyt wiele nieudanych prób dla tego konta. Spróbuj ponownie za kilka minut.',
     'Invalid username or password': 'Nieprawidłowa nazwa użytkownika lub hasło',
+    'Setup token': 'Token konfiguracji',
+    'Printed in the server log and saved in setup_token.txt next to the database.': 'Wypisany w logu serwera i zapisany w pliku setup_token.txt obok bazy danych.',
+    'Wrong setup token. It is printed in the server log and saved in setup_token.txt next to the database.': 'Nieprawidłowy token konfiguracji. Jest wypisany w logu serwera i zapisany w pliku setup_token.txt obok bazy danych.',
     'Group name is required': 'Nazwa grupy jest wymagana',
     'Group not found': 'Nie znaleziono grupy',
     'You are not a member of that group': 'Nie jesteś członkiem tej grupy',

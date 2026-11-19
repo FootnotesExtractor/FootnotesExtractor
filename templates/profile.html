@@ -196,7 +196,7 @@
                         </form>
                     </div>
                 </div>
-                <script>
+                <script nonce="{{ csp_nonce }}">
                 (function () {
                     const LEARNED = {{ (rp.learned or rp.standard)|tojson }};
                     const STANDARD = {{ rp.standard|tojson }};
@@ -306,7 +306,7 @@
                                         {% if key['revoked_at'] %}
                                             <span class="badge bg-secondary">{{ t('Revoked') }}</span>
                                         {% else %}
-                                            <form method="post" action="{{ url_for('auth.revoke_api_key', key_id=key['id']) }}" onsubmit="return confirm({{ t('Revoke the key \'{name}\'? Anything using it will stop working immediately.', name=key['name']) | tojson }});">
+                                            <form method="post" action="{{ url_for('auth.revoke_api_key', key_id=key['id']) }}" data-confirm="{{ t('Revoke the key \'{name}\'? Anything using it will stop working immediately.', name=key['name']) }}">
                                                 <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fas fa-ban"></i> {{ t('Revoke') }}</button>
                                             </form>
                                         {% endif %}

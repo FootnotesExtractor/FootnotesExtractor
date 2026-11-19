@@ -9,14 +9,15 @@
           field auto-appended once the DOM is ready.
        2. window.fetch is wrapped so every same-origin POST/PUT/PATCH/DELETE
           call automatically carries the X-CSRFToken header, covering the
-          app's own inline-<script> fetch() calls (footnote edits, bulk
+          app's own inline-script fetch() calls (footnote edits, bulk
           actions, admin toggles, etc.) without touching each call site.
 
      See app.py's CSRFProtect wiring / auth.enforce_csrf for the server side
      — API-key-authenticated requests (external scripts) are exempt there,
      this token is only ever needed for session-cookie/browser requests. -->
 <meta name="csrf-token" content="{{ csrf_token() }}">
-<script>
+<script src="{{ url_for('static', filename='js/page_actions.js') }}"></script>
+<script nonce="{{ csp_nonce }}">
 (function () {
     var token = document.querySelector('meta[name="csrf-token"]').content;
 

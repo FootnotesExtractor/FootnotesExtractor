@@ -106,7 +106,7 @@
 <div class="job-list-bulk-bar d-flex align-items-center gap-2 mb-2 p-2 flex-wrap" id="{{ list_id }}BulkBar" style="background:#eef3ff; border-radius:6px;">
     <div class="form-check mb-0">
         <input type="checkbox" class="form-check-input" id="{{ list_id }}SelectAll"
-               onchange="jobListToggleSelectAll('{{ list_id }}', this.checked)" {% if not job_rows %}disabled{% endif %}>
+               data-change="jobListToggleSelectAll" data-args='{{ [list_id] | tojson }}' data-pass-checked {% if not job_rows %}disabled{% endif %}>
         <label class="form-check-label small" for="{{ list_id }}SelectAll">{{ t('Select All') }}</label>
     </div>
     <span class="small text-muted"><span id="{{ list_id }}SelectedCount">0</span> {{ t('selected') }}</span>
@@ -123,31 +123,31 @@
             <option value="__new__">{{ t('+ New collection...') }}</option>
             {% endif %}
         </select>
-        <button type="button" class="btn btn-sm btn-outline-primary job-list-bulk-action" disabled onclick="jobListBulkAddToCollection('{{ list_id }}')">
+        <button type="button" class="btn btn-sm btn-outline-primary job-list-bulk-action" disabled data-click="jobListBulkAddToCollection" data-args='{{ [list_id] | tojson }}'>
             <i class="fas fa-folder-plus"></i> {{ t('Add to Collection') }}
         </button>
     </div>
     {% endif %}
     {% if show_unshare %}
-    <button type="button" class="btn btn-sm btn-outline-warning job-list-bulk-action" disabled onclick="jobListBulkUnshare('{{ list_id }}', {{ unshare_group_id }})">
+    <button type="button" class="btn btn-sm btn-outline-warning job-list-bulk-action" disabled data-click="jobListBulkUnshare" data-args='{{ [list_id, unshare_group_id] | tojson }}'>
         <i class="fas fa-user-slash"></i> {{ t('Remove from Group') }}
     </button>
     {% endif %}
     {% if show_remove_from_collection %}
-    <button type="button" class="btn btn-sm btn-outline-warning job-list-bulk-action" disabled onclick="jobListBulkRemoveFromCollection('{{ list_id }}', {{ remove_collection_id }})">
+    <button type="button" class="btn btn-sm btn-outline-warning job-list-bulk-action" disabled data-click="jobListBulkRemoveFromCollection" data-args='{{ [list_id, remove_collection_id] | tojson }}'>
         <i class="fas fa-folder-minus"></i> {{ t('Remove from Collection') }}
     </button>
     {% endif %}
     {% if g.user['role'] == 'admin' and INTERNAL_REFERENCE_LISTS %}
     <!-- Admin: give the selected documents the reference list found in the
          book itself (Reference List Linker, bulk_link_reference_lists). -->
-    <button type="button" class="btn btn-sm btn-outline-success job-list-bulk-action" disabled onclick="jobListBulkLinkReferenceLists('{{ list_id }}')"
+    <button type="button" class="btn btn-sm btn-outline-success job-list-bulk-action" disabled data-click="jobListBulkLinkReferenceLists" data-args='{{ [list_id] | tojson }}'
             title="{{ t("Find each book's own reference list and link it to the footnotes (in the background)") }}">
         <i class="fas fa-project-diagram"></i> {{ t('Link reference lists') }}
     </button>
     {% endif %}
     {% if show_delete %}
-    <button type="button" class="btn btn-sm btn-outline-danger job-list-bulk-action" disabled onclick="jobListBulkDelete('{{ list_id }}')">
+    <button type="button" class="btn btn-sm btn-outline-danger job-list-bulk-action" disabled data-click="jobListBulkDelete" data-args='{{ [list_id] | tojson }}'>
         <i class="fas fa-trash"></i> {{ t('Delete Permanently') }}
     </button>
     {% endif %}
@@ -165,15 +165,15 @@
         </button>
         <ul class="dropdown-menu">
             <li><h6 class="dropdown-header">BibLaTeX</h6></li>
-            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'bibtex_standard'); return false;">{{ t('BibTeX - Standard') }}</a></li>
-            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'bibtex_expanded'); return false;">{{ t('BibTeX - Expanded') }}</a></li>
+            <li><a class="dropdown-item" href="#" data-click="jobListBulkExportCitations" data-args='{{ [list_id, "bibtex_standard"] | tojson }}'>{{ t('BibTeX - Standard') }}</a></li>
+            <li><a class="dropdown-item" href="#" data-click="jobListBulkExportCitations" data-args='{{ [list_id, "bibtex_expanded"] | tojson }}'>{{ t('BibTeX - Expanded') }}</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><h6 class="dropdown-header">{{ t('Formatted Styles') }}</h6></li>
-            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'apa'); return false;">{{ t('APA 7th Edition') }}</a></li>
-            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'chicago'); return false;">{{ t('Chicago 17th Edition') }}</a></li>
-            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'mla'); return false;">{{ t('MLA 9th Edition') }}</a></li>
+            <li><a class="dropdown-item" href="#" data-click="jobListBulkExportCitations" data-args='{{ [list_id, "apa"] | tojson }}'>{{ t('APA 7th Edition') }}</a></li>
+            <li><a class="dropdown-item" href="#" data-click="jobListBulkExportCitations" data-args='{{ [list_id, "chicago"] | tojson }}'>{{ t('Chicago 17th Edition') }}</a></li>
+            <li><a class="dropdown-item" href="#" data-click="jobListBulkExportCitations" data-args='{{ [list_id, "mla"] | tojson }}'>{{ t('MLA 9th Edition') }}</a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="#" onclick="jobListBulkExportCitations('{{ list_id }}', 'reference_strings'); return false;">{{ t('Reference Strings') }}</a></li>
+            <li><a class="dropdown-item" href="#" data-click="jobListBulkExportCitations" data-args='{{ [list_id, "reference_strings"] | tojson }}'>{{ t('Reference Strings') }}</a></li>
         </ul>
     </div>
     {% endif %}
@@ -188,7 +188,7 @@
         <div class="d-flex align-items-center gap-2 flex-grow-1" style="min-width: 0;">
             {% if allow_bulk %}
             <input type="checkbox" class="form-check-input job-list-checkbox" data-list="{{ list_id }}"
-                   value="{{ job.job_id }}" onchange="jobListUpdateBulkBar('{{ list_id }}')">
+                   value="{{ job.job_id }}" data-change="jobListUpdateBulkBar" data-args='{{ [list_id] | tojson }}'>
             {% endif %}
             <div style="min-width: 0;">
                 <a href="{{ url_for('interactive_viewer', job_id=job.job_id, collection_id=viewing_collection_id) if job.status == 'completed' else url_for('status', job_id=job.job_id) }}">

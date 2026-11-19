@@ -5,54 +5,143 @@ Blueprint for account/group/admin routes: register, login, logout, groups
 (create/view/manage membership), and the admin user-management panel.
 """
 
+import hmac
+import logging
+import os
+import secrets
 import sqlite3
 import threading
 import time
+from collections import deque
 
 from flask import Blueprint, request, render_template, redirect, url_for, flash, session, g
+from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
-from auth import (login_required, admin_required, _safe_next,
+from auth import (login_required, admin_required, _safe_next, start_session,
                    collection_access_required, collection_edit_required, collection_owner_or_admin_required)
 from translations import t
 
 bp = Blueprint('auth', __name__)
 
 # ---- login brute-force throttling ----
-# Keyed by username (not IP): the app sits behind a Cloudflare Tunnel once
-# exposed to the open internet, and the tunnel process proxies from
-# localhost, so request.remote_addr is useless for this (every request
-# looks like it's from 127.0.0.1) — X-Forwarded-For would carry the real
-# client IP but is trivially spoofable by anyone who reaches the app
-# directly (e.g. on the LAN), so it's not trustworthy as a rate-limit key
-# either. Per-username throttling instead protects the thing that actually
-# matters — a given account can't be brute-forced — regardless of where
-# requests appear to originate.
-_LOGIN_MAX_ATTEMPTS = 8
+# Failures are counted per username, and also per client IP and per
+# (username, IP) pair when the client IP is trustworthy. It is trustworthy
+# only behind a proxy that overwrites X-Forwarded-For (Caddy does; waitress
+# listens on 127.0.0.1 only) and when FOOTNOTES_TRUSTED_PROXIES says how many
+# proxy hops to trust (app.py applies ProxyFix). Without it every request
+# looks local, so the username alone is the key, as before.
+#   - (username, IP): the tight limit, so one source can't brute-force an
+#     account, while others can still log in to it (no cheap lock-out).
+#   - username: a looser limit against brute force spread over many IPs.
+#   - IP: stops spraying one password across many accounts.
 _LOGIN_WINDOW_SECONDS = 15 * 60
+_LOGIN_LIMIT_PAIR = 8            # per username+IP (and per username when the IP is unknown)
+_LOGIN_LIMIT_USER = 40           # per username, from all IPs
+_LOGIN_LIMIT_IP = 30             # per IP, over all usernames
+_LOGIN_MAX_KEYS = 20000          # memory bound for the failure table
 _login_lock = threading.Lock()
-_login_failures = {}  # username.lower() -> [failure timestamps within the window]
+_login_failures = {}             # key -> deque of failure timestamps within the window
+# Checked when the username doesn't exist, so a wrong username takes as long
+# as a wrong password and response times don't reveal which accounts exist.
+_DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_urlsafe(16))
+
+
+def _client_ip():
+    """The client IP if a trusted proxy supplied it (see the comment above),
+    else None."""
+    if not int(os.environ.get('FOOTNOTES_TRUSTED_PROXIES', '0') or 0):
+        return None
+    return request.remote_addr or None
+
+
+def _login_keys(username: str):
+    name = username.lower()
+    ip = _client_ip()
+    if ip is None:
+        return [(('user', name), _LOGIN_LIMIT_PAIR)]
+    return [(('pair', name, ip), _LOGIN_LIMIT_PAIR), (('user', name), _LOGIN_LIMIT_USER), (('ip', ip), _LOGIN_LIMIT_IP)]
+
+
+def _prune_login_failures(now: float) -> None:
+    """Drop expired timestamps and empty keys; if still too many keys, drop
+    the ones whose last failure is oldest. Called with _login_lock held."""
+    for key in list(_login_failures):
+        q = _login_failures[key]
+        while q and now - q[0] >= _LOGIN_WINDOW_SECONDS:
+            q.popleft()
+        if not q:
+            del _login_failures[key]
+    if len(_login_failures) > _LOGIN_MAX_KEYS:
+        for key in sorted(_login_failures, key=lambda k: _login_failures[k][-1])[:len(_login_failures) - _LOGIN_MAX_KEYS]:
+            del _login_failures[key]
 
 
 def _login_throttled(username: str) -> bool:
-    key = username.lower()
     now = time.time()
     with _login_lock:
-        attempts = [t for t in _login_failures.get(key, []) if now - t < _LOGIN_WINDOW_SECONDS]
-        _login_failures[key] = attempts
-        return len(attempts) >= _LOGIN_MAX_ATTEMPTS
+        for key, limit in _login_keys(username):
+            q = _login_failures.get(key)
+            if q is None:
+                continue
+            while q and now - q[0] >= _LOGIN_WINDOW_SECONDS:
+                q.popleft()
+            if len(q) >= limit:
+                return True
+    return False
 
 
 def _record_login_failure(username: str) -> None:
-    key = username.lower()
+    now = time.time()
     with _login_lock:
-        _login_failures.setdefault(key, []).append(time.time())
+        if len(_login_failures) >= _LOGIN_MAX_KEYS:
+            _prune_login_failures(now)
+        for key, _limit in _login_keys(username):
+            _login_failures.setdefault(key, deque()).append(now)
 
 
 def _clear_login_failures(username: str) -> None:
-    key = username.lower()
+    """After a successful login: forget this username's own counters, but not
+    the IP's (a successful login doesn't excuse spraying other accounts)."""
+    name = username.lower()
     with _login_lock:
-        _login_failures.pop(key, None)
+        for key in list(_login_failures):
+            if key[0] in ('user', 'pair') and key[1] == name:
+                del _login_failures[key]
+
+
+# ---- first-account bootstrap ----
+# While no account exists, /register creates the admin. To keep whoever finds
+# a fresh install first from claiming it, registration then also needs a
+# one-time setup token: generated on demand, written next to the database
+# (mode 0600) and logged, so only someone with access to the server has it.
+_setup_lock = threading.Lock()
+
+
+def _setup_token_path():
+    return db.DB_PATH.parent / 'setup_token.txt'
+
+
+def _setup_token() -> str:
+    path = _setup_token_path()
+    with _setup_lock:
+        if path.exists():
+            return path.read_text(encoding='utf-8').strip()
+        token = secrets.token_urlsafe(18)
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(token + '\n')
+        logging.getLogger(__name__).warning(
+            'No account exists yet. To create the admin account, open /register and enter the setup token '
+            '%s (also saved in %s).', token, path)
+        return token
+
+
+def _discard_setup_token() -> None:
+    try:
+        _setup_token_path().unlink()
+    except FileNotFoundError:
+        pass
 
 
 @bp.route('/register', methods=['GET', 'POST'])
@@ -66,12 +155,16 @@ def register():
         flash(t('Self-registration is disabled. Ask an administrator to create your account.'))
         return redirect(url_for('auth.login'))
 
+    expected_token = _setup_token()          # created (and logged) on the first visit
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         confirm = request.form.get('confirm', '')
+        given_token = request.form.get('setup_token', '').strip()
 
-        if not username or not password:
+        if not hmac.compare_digest(given_token.encode(), expected_token.encode()):
+            flash(t('Wrong setup token. It is printed in the server log and saved in setup_token.txt next to the database.'))
+        elif not username or not password:
             flash(t('Username and password are required'))
         elif password != confirm:
             flash(t('Passwords do not match'))
@@ -83,9 +176,8 @@ def register():
             except sqlite3.IntegrityError:
                 flash(t('That username is already taken'))
             else:
-                session.clear()
-                session['user_id'] = user_id
-                session.permanent = True
+                _discard_setup_token()
+                start_session(db.get_user_by_id(user_id))
                 flash(t('Account created'))
                 return redirect(url_for('index'))
 
@@ -107,16 +199,19 @@ def login():
             flash(t('Too many failed attempts for this account. Try again in a few minutes.'))
         else:
             user = db.get_user_by_username(username)
+            if user is None:
+                check_password_hash(_DUMMY_PASSWORD_HASH, password)   # same work as a wrong password
+                ok = False
+            else:
+                ok = db.verify_password(user, password)
 
-            if user is None or not db.verify_password(user, password):
+            if not ok:
                 if username:
                     _record_login_failure(username)
                 flash(t('Invalid username or password'))
             else:
                 _clear_login_failures(username)
-                session.clear()
-                session['user_id'] = user['id']
-                session.permanent = True
+                start_session(user)
                 dest = request.form.get('next')
                 if dest and _safe_next(dest):
                     return redirect(dest)
@@ -125,8 +220,14 @@ def login():
     return render_template('login.html', next=next_path)
 
 
-@bp.route('/logout')
+@bp.route('/logout', methods=['GET', 'POST'])
 def logout():
+    """POST only logs out (a GET from a link or another site can't); it ends
+    every session of the account, so a copied cookie stops working too."""
+    if request.method != 'POST':
+        return redirect(url_for('index'))
+    if g.get('auth_via') == 'session':
+        db.bump_session_version(g.user['id'])
     session.clear()
     return redirect(url_for('auth.login'))
 
@@ -438,6 +539,10 @@ def add_job_to_collection(collection_id):
     job_id = request.form.get('job_id', '').strip()
     if not job_id or not db.can_access_job(g.user, job_id) or job_id not in processing_status:
         flash(t('Job not found'))
+    elif not db.can_edit_job(g.user, job_id):
+        # Filing a job into a collection shares it with the collection's
+        # group, so it needs edit rights on the job, not just view rights.
+        flash(t('You have view-only access to this job'))
     else:
         db.add_job_to_collection(collection_id, job_id)
         flash(t('Job added to collection'))
@@ -495,6 +600,11 @@ def change_password():
         flash(t('New password must be at least 8 characters'))
     else:
         db.set_password(g.user['id'], new)
+        # Every other session of the account (a stolen cookie included) ends;
+        # this browser stays logged in under the new version.
+        new_version = db.bump_session_version(g.user['id'])
+        if g.get('auth_via') == 'session':
+            session['sv'] = new_version
         flash(t('Password changed'))
 
     return redirect(url_for('auth.profile'))

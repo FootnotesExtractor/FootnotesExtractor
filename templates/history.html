@@ -140,11 +140,11 @@
                                 Recent Jobs
                             </h5>
                             <div>
-                                <button class="btn btn-outline-secondary btn-sm me-2" onclick="refreshHistory()">
+                                <button class="btn btn-outline-secondary btn-sm me-2" data-click="refreshHistory">
                                     <i class="fas fa-sync-alt"></i>
                                     Refresh
                                 </button>
-                                <button class="btn btn-outline-danger btn-sm" onclick="clearHistory()">
+                                <button class="btn btn-outline-danger btn-sm" data-click="clearHistory">
                                     <i class="fas fa-trash"></i>
                                     Clear All
                                 </button>
@@ -189,7 +189,7 @@
                                                                 <option value="{{ grp['id'] }}" {% if job.owner_info.group_name == grp['name'] %}selected{% endif %}>{{ grp['name'] }}</option>
                                                                 {% endfor %}
                                                             </select>
-                                                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="shareJob('{{ job.job_id }}')" title="Update sharing">
+                                                            <button type="button" class="btn btn-outline-secondary btn-sm" data-click="shareJob" data-args='{{ [job.job_id] | tojson }}' title="Update sharing">
                                                                 <i class="fas fa-share-alt"></i>
                                                             </button>
                                                         </span>
@@ -268,7 +268,7 @@
                                                 {% endif %}
                                                 
                                                 <button class="btn btn-outline-danger btn-sm" 
-                                                        onclick="deleteJob('{{ job.job_id }}')">
+                                                        data-click="deleteJob" data-args='{{ [job.job_id] | tojson }}'>
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             </div>
@@ -365,7 +365,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
+    <script nonce="{{ csp_nonce }}">
         let jobToDelete = null;
 
         // Keep a job row elevated (see .history-item.dropdown-open in the

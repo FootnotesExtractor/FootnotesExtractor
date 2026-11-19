@@ -47,8 +47,13 @@
 
                         <form method="post">
                             <div class="mb-3">
+                                <label for="setup_token" class="form-label">{{ t('Setup token') }}</label>
+                                <input type="text" class="form-control" id="setup_token" name="setup_token" required autofocus autocomplete="off">
+                                <div class="form-text">{{ t('Printed in the server log and saved in setup_token.txt next to the database.') }}</div>
+                            </div>
+                            <div class="mb-3">
                                 <label for="username" class="form-label">{{ t('Username') }}</label>
-                                <input type="text" class="form-control" id="username" name="username" required autofocus>
+                                <input type="text" class="form-control" id="username" name="username" required>
                             </div>
                             <div class="mb-3">
                                 <label for="password" class="form-label">{{ t('Password') }}</label>

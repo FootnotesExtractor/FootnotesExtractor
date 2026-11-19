@@ -63,7 +63,7 @@
                                     <td>
                                         {% if can_manage %}
                                         <form method="post" action="{{ url_for('auth.set_group_member_role', group_id=group['id'], user_id=member['id']) }}"
-                                              onchange="this.submit()" class="d-inline">
+                                              data-autosubmit class="d-inline">
                                             <select name="role" class="form-select form-select-sm w-auto d-inline-block" style="min-width:90px;"
                                                     {% if is_last_owner %}title="{{ t('This group\'s only owner — promote another member to owner first to change this') }}"{% endif %}>
                                                 <option value="owner" {% if member['role'] == 'owner' %}selected{% endif %}>{{ t('Owner') }}</option>
@@ -81,7 +81,7 @@
                                     {% if can_manage %}
                                     <td class="text-end">
                                         {% if not is_last_owner %}
-                                        <form method="post" action="{{ url_for('auth.remove_group_member', group_id=group['id'], user_id=member['id']) }}" onsubmit="return confirm({{ t('Remove {name} from this group?', name=member['username']) | tojson }});">
+                                        <form method="post" action="{{ url_for('auth.remove_group_member', group_id=group['id'], user_id=member['id']) }}" data-confirm="{{ t('Remove {name} from this group?', name=member['username']) }}">
                                             <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fas fa-times"></i></button>
                                         </form>
                                         {% else %}
@@ -108,7 +108,7 @@
                         </form>
 
                         <hr class="my-3">
-                        <form method="post" class="text-end" action="{{ url_for('auth.delete_group', group_id=group['id']) }}" onsubmit="return confirm({{ t('Delete this group? Members are removed, and anything shared with the group (jobs, collections) just becomes private again — nothing else is deleted.') | tojson }});">
+                        <form method="post" class="text-end" action="{{ url_for('auth.delete_group', group_id=group['id']) }}" data-confirm="{{ t('Delete this group? Members are removed, and anything shared with the group (jobs, collections) just becomes private again — nothing else is deleted.') }}">
                             <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fas fa-trash"></i> {{ t('Delete Group') }}</button>
                         </form>
                         {% endif %}

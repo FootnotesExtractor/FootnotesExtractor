@@ -37,6 +37,7 @@ import threading
 import queue
 import concurrent.futures
 import difflib
+from collections import defaultdict
 
 # Run as `python app.py` and this module is `__main__`; api_routes/auth_routes
 # then do `from app import processing_status, ...`, which Python treats as a
@@ -185,6 +186,65 @@ app.before_request(auth.load_language)
 app.before_request(auth.load_registration_open)
 app.register_blueprint(auth_bp)
 app.register_blueprint(api_bp)
+
+# Client IPs: waitress listens on 127.0.0.1 only, so every request arrives
+# from the local proxy. FOOTNOTES_TRUSTED_PROXIES says how many proxy hops in
+# front of the app set X-Forwarded-For (1 behind Caddy, which overwrites any
+# value a client sends); unset or 0, the header is ignored. Used for the
+# login throttle's per-IP counters (auth_routes._client_ip).
+_TRUSTED_PROXIES = int(os.environ.get('FOOTNOTES_TRUSTED_PROXIES', '0') or 0)
+if _TRUSTED_PROXIES > 0:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_TRUSTED_PROXIES)
+
+# ---- security headers ----
+# Content-Security-Policy: scripts only from this site, the two CDNs the pages
+# use, and inline <script> blocks carrying this request's nonce. Inline event
+# handlers (onclick=...) and injected <script>/<img onerror> run nowhere, so
+# text that slips through unescaped can't execute (static/js/page_actions.js
+# wires the former inline handlers by data- attributes instead). Styles may stay
+# inline (the templates use style= throughout); pdf.js needs blob: workers.
+_CDNS = 'https://cdn.jsdelivr.net https://cdnjs.cloudflare.com'
+
+
+@app.before_request
+def _make_csp_nonce():
+    g.csp_nonce = secrets.token_urlsafe(16)
+
+
+@app.context_processor
+def _inject_csp_nonce():
+    return {'csp_nonce': g.get('csp_nonce', '')}
+
+
+@app.after_request
+def _security_headers(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    response.headers.setdefault('Referrer-Policy', 'same-origin')
+    response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+    response.headers.setdefault('Cross-Origin-Opener-Policy', 'same-origin')
+    # Pages differ per logged-in user: tell any cache in between (Flask 2.3
+    # misses this for some kinds of session access, PYSEC-2026-2151, fixed
+    # only in Flask 3.1.3).
+    response.vary.add('Cookie')
+    # HTML pages only: a CSP on the PDF itself can stop the browser's own
+    # PDF viewer from rendering it.
+    if response.mimetype == 'text/html' and g.get('csp_nonce'):
+        response.headers.setdefault('Content-Security-Policy', '; '.join([
+            "default-src 'self'",
+            f"script-src 'self' 'nonce-{g.csp_nonce}' {_CDNS}",
+            f"style-src 'self' 'unsafe-inline' {_CDNS}",
+            f"font-src 'self' data: {_CDNS}",
+            "img-src 'self' data: blob:",
+            "connect-src 'self'",
+            "worker-src 'self' blob:",
+            "object-src 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            "frame-ancestors 'self'",
+        ]))
+    return response
 
 
 # %b/%p in strftime always render in English regardless of g.lang — Python's
@@ -478,6 +538,33 @@ def load_history():
 # Load history on startup
 load_history()
 
+_UUID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+# Uploads are saved as <date>_<time>_<first 8 characters of the job id>_<name>.pdf
+_UPLOAD_NAME_RE = re.compile(r'\d{8}_\d{6}_([0-9a-f]{8})_.*\.pdf$', re.IGNORECASE)
+
+
+def _backfill_upload_files():
+    """Jobs uploaded before 'upload_file' was recorded: their PDF is the one
+    upload whose name starts <date>_<time>_<first 8 characters of the job id>_,
+    when exactly one does. Recorded in memory, saved with the next history save.
+    (Matching the 8 characters anywhere in a name, as before, found two files
+    for some jobs: a later upload whose name contains an older upload's.)"""
+    missing = [j for j, st in processing_status.items() if isinstance(st, dict) and not st.get('upload_file')]
+    if not missing or not UPLOAD_FOLDER.is_dir():
+        return
+    by_prefix = defaultdict(list)
+    for path in UPLOAD_FOLDER.iterdir():
+        m = _UPLOAD_NAME_RE.match(path.name)
+        if m:
+            by_prefix[m.group(1)].append(path.name)
+    for job_id in missing:
+        names = by_prefix.get(job_id[:8], [])
+        if len(names) == 1:
+            processing_status[job_id]['upload_file'] = names[0]
+
+
+_backfill_upload_files()
+
 def allowed_file(filename):
     """Check if file has allowed extension"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -527,6 +614,9 @@ def worker(index=0):
         # for older-shaped queue entries) — who to attribute the initial-pass
         # prediction log entries to, since there's no request/g.user here.
         job_id, pdf_path, options, *actor = job
+        if job_id not in processing_status:   # deleted while it waited in the queue
+            job_queue.task_done()
+            continue
         uploader_id = actor[0] if len(actor) > 0 else None
         uploader_username = actor[1] if len(actor) > 1 else None
         try:
@@ -696,8 +786,8 @@ def process_pdf_sync(job_id, pdf_path, options, uploader_id=None, uploader_usern
         })
         
         # Initialize enhanced pipeline with options
-        od_model_path = str(Path(__file__).parent / 'models' / 'od' / f"{options.get('od_model', 'yolo11n_640_production')}.pt")
-        ner_suite_path = str(Path(__file__).parent / 'models' / 'ner' / options.get('ner_suite', 'mbert_production'))
+        od_model_path = _model_path('od', options.get('od_model', 'yolo11n_640_production'), '.pt')
+        ner_suite_path = _model_path('ner', options.get('ner_suite', 'mbert_production'))
         is_nested = 'nested' in options.get('ner_suite', 'mbert_production').lower()
 
         # This job's own copies of the models it uses, taken in the one order
@@ -1014,6 +1104,16 @@ OCR_ENGINES = {
 MODEL_TYPES = ('od_model', 'ner_suite', 'ocr_engine')
 
 
+def _model_path(kind: str, key: str, suffix: str = '') -> str:
+    """models/<kind>/<key><suffix> for a model name. Names come from requests
+    and stored job options, so an absolute name or one with '..' (which could
+    point anywhere on disk) is refused; names may contain '/' for models in
+    subfolders. Doesn't resolve symlinks: model folders may link elsewhere."""
+    if not key or '\x00' in key or '\\' in key or Path(key).is_absolute() or '..' in Path(key).parts:
+        raise ValueError(f'Invalid model name {key!r}')
+    return str(Path(__file__).parent / 'models' / kind / f'{key}{suffix}')
+
+
 def get_available_models():
     """Scan the local models directory and return available models, each
     flagged 'available' or 'disabled' (admin-turned-off via /admin/models —
@@ -1098,6 +1198,35 @@ def get_available_models():
     return od_models, ner_suites, ocr_engines
 
 
+_MAX_BATCH_SIZE = 64
+
+
+def _numeric_upload_options(form):
+    """The numeric upload options from a form (web or API), checked: the three
+    thresholds are numbers in [0, 1] and batch_size an integer in
+    [1, _MAX_BATCH_SIZE]. Returns (values, None) or ({}, error message), so a
+    malformed value is a 400 with a message instead of a 500."""
+    values = {}
+    for name, default in (('od_conf', 0.5), ('ref_conf', 0.7), ('comp_conf', 0.7)):
+        raw = form.get(name, default)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return {}, f'{name} must be a number'
+        if not (0.0 <= value <= 1.0):
+            return {}, f'{name} must be between 0 and 1'
+        values[name] = value
+    raw = form.get('batch_size', 8)
+    try:
+        batch_size = int(raw)
+    except (TypeError, ValueError):
+        return {}, 'batch_size must be an integer'
+    if not (1 <= batch_size <= _MAX_BATCH_SIZE):
+        return {}, f'batch_size must be between 1 and {_MAX_BATCH_SIZE}'
+    values['batch_size'] = batch_size
+    return values, None
+
+
 def _limit_upload_options(options):
     """Upload options as far as the uploader's features allow (features.py),
     for the form and the API alike: without Advanced Options every model,
@@ -1124,6 +1253,14 @@ def _validate_model_selection(options):
     server-side (not just greyed out in index.html) so a disabled model
     can't be requested by editing the greyed-out <option> back in, or via
     the JSON API, which doesn't render the form at all."""
+    # Allow-list first: a model name becomes a file path (models/od/<name>.pt,
+    # models/ner/<name>), so only names the models directory actually offers
+    # are accepted; the admin deny-list below applies on top of that.
+    od_models, ner_suites, _ocr_engines = get_available_models()
+    if options.get('od_model') not in od_models:
+        return f"Unknown detection model '{options.get('od_model')}' — pick one from the list."
+    if options.get('ner_suite') not in ner_suites:
+        return f"Unknown NER suite '{options.get('ner_suite')}' — pick one from the list."
     ocr_key = 'surya' if options.get('use_surya_ocr') else 'pdfminer'
     for model_type, key in (
         ('od_model', options.get('od_model')),
@@ -1242,6 +1379,7 @@ def _process_upload(files, options, group_id, collection_id, user, book_metadata
             'progress': 0,
             'start_time': datetime.now(),
             'original_filename': file.filename,
+            'upload_file': safe_filename,     # the exact file, see _find_source_pdf
             'options': options,
             'book_metadata': dict(cleaned_metadata),
         }
@@ -1298,13 +1436,14 @@ def upload_file():
         return redirect(url_for('index'))
 
     # Get processing options from form
+    numeric, numeric_error = _numeric_upload_options(request.form)
+    if numeric_error:
+        flash(numeric_error)
+        return redirect(url_for('index'))
     options = {
         'debug': 'debug' in request.form,
         'cpu_mode': 'cpu_mode' in request.form,
-        'od_conf': float(request.form.get('od_conf', 0.5)),
-        'ref_conf': float(request.form.get('ref_conf', 0.7)),
-        'comp_conf': float(request.form.get('comp_conf', 0.7)),
-        'batch_size': int(request.form.get('batch_size', 8)),
+        **numeric,
         'od_model': request.form.get('od_model', DEFAULT_OD_MODEL),
         'ner_suite': request.form.get('ner_suite', DEFAULT_NER_SUITE),
         'enable_grobid': 'enable_grobid' in request.form,
@@ -1332,7 +1471,11 @@ def upload_file():
 
     # Optional "share with group" choice — defaults to private (owner + admins only).
     group_id_raw = request.form.get('group_id', '').strip()
-    group_id = int(group_id_raw) if group_id_raw else None
+    try:
+        group_id = int(group_id_raw) if group_id_raw else None
+    except ValueError:
+        flash(t('You are not a member of that group'))
+        return redirect(url_for('index'))
     if group_id is not None and g.user['role'] != 'admin' and not db.is_group_member(group_id, g.user['id']):
         flash(t('You are not a member of that group'))
         return redirect(url_for('index'))
@@ -1340,9 +1483,15 @@ def upload_file():
     # Optional "add to collection" choice, so a freshly-uploaded publication can
     # be filed away immediately instead of requiring a separate trip to it later.
     collection_id_raw = request.form.get('collection_id', '').strip()
-    collection_id = int(collection_id_raw) if collection_id_raw else None
+    try:
+        collection_id = int(collection_id_raw) if collection_id_raw else None
+    except ValueError:
+        collection_id = -1                     # no such collection: refused just below
     if collection_id is not None and not db.can_access_collection(g.user, collection_id):
         flash(t('Collection not found'))
+        return redirect(url_for('index'))
+    if collection_id is not None and not db.can_edit_collection(g.user, collection_id):
+        flash(t('You have view-only access to this collection'))
         return redirect(url_for('index'))
 
     # Optional book metadata (authors/title/year/publisher/license) — all
@@ -1652,10 +1801,15 @@ def update_job_ner_suite(job_id):
         return jsonify({'error': 'Job not found'}), 404
 
     current_suite = processing_status[job_id].get('options', {}).get('ner_suite', 'mbert_production')
+    if new_suite != current_suite and new_suite not in get_available_models()[1]:
+        return jsonify({'error': f"Unknown NER suite '{new_suite}' — pick one from the list."}), 400
     if new_suite != current_suite and db.is_model_disabled('ner_suite', new_suite):
         return jsonify({'error': f"'{new_suite}' has been disabled by an admin — pick another."}), 403
 
-    suite_path = str(Path(__file__).parent / 'models' / 'ner' / new_suite)
+    try:
+        suite_path = _model_path('ner', new_suite)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     is_nested = 'nested' in new_suite.lower()
     if not _ner_suite_available(suite_path, is_nested):
         return jsonify({'error': f"'{new_suite}' isn't loadable either — pick a different suite"}), 422
@@ -1807,10 +1961,9 @@ def serve_pdf(job_id):
     if job_id not in processing_status:
         return jsonify({'error': 'PDF not found'}), 404
     
-    # Try to find the file in uploads
-    for file in UPLOAD_FOLDER.glob(f"*{job_id[:8]}*.pdf"):
-        return send_file(file)
-
+    pdf = _find_source_pdf(job_id)
+    if pdf is not None:
+        return send_file(pdf)
     return jsonify({'error': 'PDF not found'}), 404
 
 
@@ -1926,11 +2079,50 @@ def _save_job_proposals(job_id, data):
     job_proposals[job_id] = data
 
 
-def _find_source_pdf(job_id):
-    """Locate the originally uploaded PDF for a job, same glob as serve_pdf."""
-    for file in UPLOAD_FOLDER.glob(f"*{job_id[:8]}*.pdf"):
-        return file
-    return None
+def _find_source_pdf(job_id, status=None):
+    """The job's uploaded PDF: the exact file recorded at upload (or by
+    _backfill_upload_files), else the single upload named
+    <date>_<time>_<first 8 characters of the job id>_...; None if there is no
+    such file or the name is ambiguous. status: the job's record when it has
+    already been taken out of processing_status (deleting a job)."""
+    st = status if status is not None else (processing_status.get(job_id) or {})
+    name = st.get('upload_file') if isinstance(st, dict) else None
+    if name:
+        path = UPLOAD_FOLDER / Path(name).name
+        return path if path.is_file() else None
+    if not _UUID_RE.fullmatch(job_id or ''):
+        return None
+    matches = [path for path in UPLOAD_FOLDER.glob(f'*_{job_id[:8]}_*')
+               if (m := _UPLOAD_NAME_RE.match(path.name)) and m.group(1) == job_id[:8]]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _delete_job_files(job_id, status=None):
+    """Remove everything a deleted job left on disk: its uploaded PDF, its
+    results/<job_id>_* files (results, layout proposals, reference list, link
+    counts, review flags and their .bak copies) and its re-processing backups.
+    Only for a real job id (a UUID): it is part of a glob pattern. The shared
+    activity log keeps its entries (it is the record of who did what).
+    Returns the names of the files removed."""
+    if not _UUID_RE.fullmatch(job_id or ''):
+        return []
+    targets = []
+    pdf = _find_source_pdf(job_id, status)
+    if pdf is not None:
+        targets.append(pdf)
+    targets += RESULTS_FOLDER.glob(f'{job_id}_*')
+    backups = RESULTS_FOLDER / 'reprocess_backups'
+    if backups.is_dir():
+        targets += backups.glob(f'{job_id}_*')
+    removed = []
+    for path in targets:
+        try:
+            if path.is_file():
+                path.unlink()
+                removed.append(path.name)
+        except OSError as e:
+            logger.warning(f"Could not delete {path} of deleted job {job_id}: {e}")
+    return removed
 
 
 def _get_use_surya_ocr(job_id):
@@ -1973,7 +2165,11 @@ def _get_ner_options(job_id):
     same fields process_pdf_sync uses to construct the pipeline)."""
     options = processing_status.get(job_id, {}).get('options', {})
     ner_suite = options.get('ner_suite', 'mbert_production')
-    ner_suite_path = str(Path(__file__).parent / 'models' / 'ner' / ner_suite)
+    try:
+        ner_suite_path = _model_path('ner', ner_suite)
+    except ValueError:
+        ner_suite = DEFAULT_NER_SUITE
+        ner_suite_path = _model_path('ner', ner_suite)
     is_nested = 'nested' in ner_suite.lower()
     ref_conf = options.get('ref_conf', 0.7)
     comp_conf = options.get('comp_conf', 0.7)
@@ -6231,13 +6427,12 @@ def delete_job(job_id):
     """Delete a job from history"""
     filename = processing_status.get(job_id, {}).get('original_filename')
     owner_info = db.describe_job_owner(job_id)
-    if job_id in processing_status:
-        del processing_status[job_id]
-    if job_id in processing_results:
-        del processing_results[job_id]
+    status = processing_status.pop(job_id, None)
+    processing_results.pop(job_id, None)
     save_history()
     db.purge_job_references(job_id)
-    _log_activity('job_delete', job_id, filename=filename, owner_info=owner_info)
+    removed = _delete_job_files(job_id, status)
+    _log_activity('job_delete', job_id, filename=filename, owner_info=owner_info, files_removed=len(removed))
     return jsonify({'success': True})
 
 # ---- Reference List Linker (features.py: reference_linker) ----
@@ -6803,11 +6998,12 @@ def bulk_delete_jobs():
             continue
         filename = processing_status.get(job_id, {}).get('original_filename')
         owner_info = db.describe_job_owner(job_id)
-        del processing_status[job_id]
-        if job_id in processing_results:
-            del processing_results[job_id]
+        status = processing_status.pop(job_id, None)
+        processing_results.pop(job_id, None)
         db.purge_job_references(job_id)
-        _log_activity('job_delete', job_id, filename=filename, owner_info=owner_info, bulk=True)
+        removed = _delete_job_files(job_id, status)
+        _log_activity('job_delete', job_id, filename=filename, owner_info=owner_info, bulk=True,
+                      files_removed=len(removed))
         deleted.append(job_id)
 
     if deleted:
@@ -6850,7 +7046,9 @@ def bulk_add_jobs_to_collection():
         if job_id not in processing_status:
             skipped.append({'job_id': job_id, 'reason': 'not_found'})
             continue
-        if not db.can_access_job(g.user, job_id):
+        # Filing a job into a collection shares it with the collection's
+        # group, so it needs edit rights on the job, not just view rights.
+        if not db.can_edit_job(g.user, job_id):
             skipped.append({'job_id': job_id, 'reason': 'forbidden'})
             continue
         db.add_job_to_collection(collection_id, job_id)  # INSERT OR IGNORE — re-adding is a harmless no-op
@@ -6996,23 +7194,28 @@ def bulk_export_citations():
 @app.route('/api/history/clear', methods=['POST'])
 @login_required
 def clear_history():
-    """Clear history. Non-admins only clear jobs they own (not merely
+    """Clear history: delete every job the caller owns (not merely
     group-shared ones — a collaborator shouldn't be able to purge someone
-    else's job from the shared store). Admins clear everything, matching the
-    original single-user behavior."""
-    if g.user['role'] == 'admin':
-        target_ids = set(processing_status.keys())
-    else:
-        target_ids = set()
-        for jid in processing_status:
-            owner = db.get_job_owner(jid)
-            if owner is not None and owner['owner_user_id'] == g.user['id']:
-                target_ids.add(jid)
+    else's job from the shared store). Admins too: clearing deletes the jobs'
+    files, so "everything" would wipe every user's documents at once; an admin
+    removes other users' jobs one by one or in bulk instead."""
+    target_ids = set()
+    for jid in processing_status:
+        owner = db.get_job_owner(jid)
+        if owner is not None and owner['owner_user_id'] == g.user['id']:
+            target_ids.add(jid)
 
+    removed_status = {}
     for jid in target_ids:
-        processing_status.pop(jid, None)
+        removed_status[jid] = processing_status.pop(jid, None)
         processing_results.pop(jid, None)
     save_history()
+    # Clearing is deleting: the database rows and files go too, as in delete_job.
+    for jid, status in removed_status.items():
+        db.purge_job_references(jid)
+        _delete_job_files(jid, status)
+    if target_ids:
+        _log_activity('history_clear', None, cleared=len(target_ids))
     return jsonify({'success': True, 'cleared': len(target_ids)})
 
 @app.errorhandler(413)
@@ -7131,6 +7334,12 @@ def internal_drain():
     return jsonify({'draining': _draining.is_set(), 'processing': processing})
 
 
+# The startup self-call (_trigger_self_warmup) proves itself with this
+# in-process secret; anyone else needs to be an admin. Not a remote-address
+# check: behind Caddy every request comes from 127.0.0.1.
+_WARMUP_TOKEN = secrets.token_urlsafe(32)
+
+
 @app.route('/api/_internal/warmup', methods=['GET', 'POST'])
 def internal_warmup():
     """Not user-facing — triggers _eager_load_default_models() inside a real
@@ -7143,7 +7352,12 @@ def internal_warmup():
     mechanism every OCREngine/NEREngine.get_instance() call already goes
     through successfully on every other endpoint all session, works reliably.
     Idempotent: get_instance()'s cache makes repeat calls a cheap no-op.
+    Only the app's own startup call (in-process token) or an admin.
     """
+    token = request.headers.get('X-Warmup-Token', '')
+    is_self = bool(token) and secrets.compare_digest(token, _WARMUP_TOKEN)
+    if not is_self and (g.get('user') is None or g.user['role'] != 'admin'):
+        return jsonify({'error': 'Admin access required'}), 403
     _eager_load_default_models()
     return jsonify({'status': 'ok'})
 
@@ -7186,7 +7400,8 @@ def _trigger_self_warmup(port=5002):
             return
 
         try:
-            urllib.request.urlopen(f'{base}/api/_internal/warmup', timeout=900)   # several copies to load
+            warm = urllib.request.Request(f'{base}/api/_internal/warmup', headers={'X-Warmup-Token': _WARMUP_TOKEN})
+            urllib.request.urlopen(warm, timeout=900)   # several copies to load
         except Exception as e:
             logger.error(f"Self-triggered warmup request failed: {e}")
     finally:

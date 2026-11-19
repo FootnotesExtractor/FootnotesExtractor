@@ -33,13 +33,32 @@ def load_logged_in_user():
     access checks) only ever looks at g.user, so a script authenticating
     with an API key is indistinguishable from a logged-in browser tab to
     the rest of the app — no other route needed to change to support it."""
+    g.auth_via = None
     user_id = session.get('user_id')
     if user_id is not None:
-        g.user = db.get_user_by_id(user_id)
-        return
+        user = db.get_user_by_id(user_id)
+        # A cookie issued before the account's last logout or password change
+        # is dead (db.bump_session_version): Flask's session is a signed
+        # cookie, so this check is the only way to revoke one server-side.
+        if user is not None and session.get('sv', 0) == (user['session_version'] or 0):
+            g.user = user
+            g.auth_via = 'session'
+            return
+        session.clear()
 
     api_key = _extract_api_key()
     g.user = db.get_user_by_api_key(api_key) if api_key else None
+    if g.user is not None:
+        g.auth_via = 'api_key'
+
+
+def start_session(user) -> None:
+    """Log this user in on the current browser: a fresh session carrying the
+    account's current session version (see load_logged_in_user)."""
+    session.clear()
+    session['user_id'] = user['id']
+    session['sv'] = user['session_version'] or 0
+    session.permanent = True
 
 
 def enforce_csrf():
@@ -52,7 +71,10 @@ def enforce_csrf():
     methods (GET/HEAD/OPTIONS), so this runs unconditionally otherwise,
     covering session-cookie-authenticated form posts and fetch() calls
     alike."""
-    if _extract_api_key():
+    # Only a request that really authenticated with a valid API key (and no
+    # session cookie) is exempt; an invalid or unused key header next to a
+    # session cookie no longer switches the check off.
+    if g.get('auth_via') == 'api_key':
         return
     from app import csrf  # deferred: same circular-import reason as app.py's own imports of this blueprint
     csrf.protect()
@@ -105,8 +127,16 @@ def _wants_json() -> bool:
 
 
 def _safe_next(target: str) -> bool:
-    """Open-redirect guard: only allow same-site, non-protocol-relative paths."""
-    return target.startswith('/') and not target.startswith('//')
+    """Open-redirect guard: only a same-site absolute path. Browsers read a
+    backslash as a slash (so "/\\evil.com" is "//evil.com"), so backslashes,
+    control characters and anything but a single leading slash are refused."""
+    if not target or not target.startswith('/') or target.startswith('//'):
+        return False
+    if '\\' in target or any(ord(ch) < 32 or ord(ch) == 127 for ch in target):
+        return False
+    from urllib.parse import urlsplit
+    parts = urlsplit(target)
+    return not parts.scheme and not parts.netloc
 
 
 def login_required(view):

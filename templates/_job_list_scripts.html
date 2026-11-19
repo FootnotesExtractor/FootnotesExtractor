@@ -2,7 +2,7 @@
      once per page (safe to include more than once — just redefines the same
      functions — but one page never needs more than one job list in this
      app's current scope, so this is included exactly once alongside it). -->
-<script>
+<script nonce="{{ csp_nonce }}">
 const JOB_LIST_I18N = {
     linkQueued: {{ t('Reference lists queued for {n} document(s); {s} skipped (not finished processing). Each viewer shows the result once it is done.') | tojson }},
     skippedSuffix: {{ t('skipped') | tojson }},
