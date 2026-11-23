@@ -11,6 +11,7 @@ ibid. and op. cit. A reviewer corrects anything in an interactive viewer, and th
 results export as BibTeX, APA, Chicago, MLA, plain text, JSON or CSV.
 
 **Project page:** <https://footnotesextractor.github.io/FootnotesExtractor/>
+**Documentation:** [English](docs/en/README.md) · [Polski](docs/pl/README.md)
 **Models:** <https://huggingface.co/FootnotesExtractor/footnotes-extractor-models>
 
 ## How it works
@@ -139,7 +140,7 @@ with open("book.bib", "wb") as f:
     f.write(bib.content)
 ```
 
-The full reference is in [API.md](API.md).
+The full reference is in the [API documentation](docs/en/api.md).
 
 ## Configuration
 
