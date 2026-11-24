@@ -38,4 +38,5 @@ Everything runs on your own server. Uploaded PDFs, results and accounts stay the
 
 - [Tutorial](tutorial.md): install the app, run it, and work through a first document.
 - [What it can do](features.md): the main functions, with recordings.
+- [Models](models.md): sizes, installing one, licences.
 - [HTTP API](api.md): use the app from scripts.

@@ -16,10 +16,10 @@
 
 | | Minimum |
 |---|---|
-| GPU | NVIDIA, 10 GB of memory |
+| GPU | NVIDIA, 10 GB of memory (4 GB with the [small](models.md) models, 6 GB with the medium ones) |
 | CPU | 4 cores |
 | RAM | 12 GB |
-| Disk | 6.1 GB for the app and Python packages, 6.7 GB for the models |
+| Disk | 6.1 GB for the app and Python packages, 6.7 GB for the models (1.7 GB for the small ones) |
 | Software | Linux, Python 3.10 |
 
 The installed PyTorch build needs an NVIDIA driver that supports CUDA 12.4. Check the driver with
@@ -45,6 +45,8 @@ Open <http://127.0.0.1:5002>.
   weights (about 1.1 GB) the first time it runs.
 - `FOOTNOTES_INSECURE_COOKIES=1` allows you to log in over plain HTTP on your own machine. Never set it on
   a server.
+- To use smaller models, see [Models](models.md): `python setup_models.py --size small` downloads 1.7 GB in
+  place of 5.6 GB and needs less GPU memory.
 - `python setup_models.py --herbert` also downloads a second set of parsing models. It needs 4.2 GB more
   disk space and more GPU memory than the minimum above.
 
@@ -63,8 +65,8 @@ You can switch the interface to Polish with the language menu in the top bar.
 
 1. Choose one or more PDFs on the home page (or drop them there). Each PDF can be up to 200 MB. One
    upload can hold up to 900 PDFs and 850 MB together.
-2. Optional: pick a collection under **Add to collection**, or open **Advanced Options** to choose models,
-   the OCR engine, confidence thresholds and processing options.
+2. Optional: pick a collection under **Add to collection**, or open **Advanced Options** to choose a model
+   size ([Models](models.md)), single models, the OCR engine, confidence thresholds and processing options.
 3. Press **Extract Footnotes**. The status page shows the progress. Documents wait in a queue, so several
    uploads are processed one after another.
 4. When it finishes, open the **Interactive Viewer**.

@@ -155,6 +155,29 @@
                                     <div id="collapseOne" class="accordion-collapse collapse" data-bs-parent="#advancedOptions">
                                         <div class="accordion-body">
                                             <!-- Model Selection -->
+                                            <div class="row mb-3">
+                                                <div class="col-12">
+                                                    <label for="model_size" class="form-label">
+                                                        <i class="fas fa-layer-group"></i>
+                                                        {{ t('Model size') }}
+                                                    </label>
+                                                    <!-- Not submitted: picks the three models below (script at the end). -->
+                                                    <select class="form-select" id="model_size">
+                                                        {% for size, choice in model_sizes.items() %}
+                                                        <option value="{{ size }}"
+                                                                data-od-model="{{ choice.od_model }}"
+                                                                data-ner-suite="{{ choice.ner_suite }}"
+                                                                data-ocr-engine="{{ choice.ocr_engine }}"
+                                                                {% if choice.status != 'available' %}disabled{% endif %}
+                                                                {% if choice.default %}selected{% endif %}>
+                                                            {{ t({'small': 'Small', 'medium': 'Medium', 'large': 'Large'}[size]) }}{% if choice.default %} ({{ t('the default') }}){% endif %}{% if choice.status == 'disabled' %} ({{ t('Disabled by admin') }}){% elif choice.status == 'not_installed' %} ({{ t('not installed') }}){% endif %}
+                                                        </option>
+                                                        {% endfor %}
+                                                        <option value="custom" hidden>{{ t('Custom') }}</option>
+                                                    </select>
+                                                    <div class="form-text">{{ t('Sets detection, parsing and OCR together. Smaller models need less GPU memory and disk space; larger ones usually read more accurately.') }}</div>
+                                                </div>
+                                            </div>
                                             <div class="row mb-4">
                                                 <div class="col-md-6">
                                                     <div class="mb-3">
@@ -200,7 +223,7 @@
                                                         <select class="form-select" id="ocr_engine" name="ocr_engine">
                                                             {% for key, engine in ocr_engines.items() %}
                                                             <option value="{{ key }}"
-                                                                {% if key == 'surya' and engine.status == 'available' %}selected{% endif %}
+                                                                {% if key == DEFAULT_OCR_ENGINE and engine.status == 'available' %}selected{% endif %}
                                                                 {% if engine.status != 'available' %}disabled{% endif %}>
                                                                 {{ engine.name }}{% if engine.status != 'available' %} ({{ t('Disabled by admin') }}){% endif %}
                                                             </option>
@@ -442,6 +465,26 @@
             const total = list.reduce((sum, file) => sum + file.size, 0);
             return list.length > MAX_BATCH_FILES || total > MAX_BATCH_BYTES ? I18N.uploadTooLarge : '';
         }
+
+        // Model size: one choice that sets the three model selects; changing one
+        // of those by hand shows which size (or none) it makes.
+        (function() {
+            const size = document.getElementById('model_size');
+            if (!size) return;                      // no Advanced Options
+            const selects = { odModel: 'od_model', nerSuite: 'ner_suite', ocrEngine: 'ocr_engine' };
+            const el = key => document.getElementById(selects[key]);
+            size.addEventListener('change', () => {
+                if (size.value === 'custom') return;
+                for (const key in selects) el(key).value = size.selectedOptions[0].dataset[key];
+            });
+            const showChosen = () => {
+                const match = Array.from(size.options).find(option => option.value !== 'custom' && !option.disabled
+                    && Object.keys(selects).every(key => option.dataset[key] === el(key).value));
+                size.value = match ? match.value : 'custom';
+            };
+            for (const key in selects) el(key).addEventListener('change', showChosen);
+            showChosen();                    // what the form starts with
+        })();
 
         // File input handling
         const fileInput = document.getElementById('fileInput');

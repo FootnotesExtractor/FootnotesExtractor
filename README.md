@@ -36,6 +36,8 @@ Minimum requirements:
 | Disk: app and Python packages | 6.1 GB |
 | Disk: models | 6.7 GB (5.6 GB for finding and parsing, 1.1 GB for OCR) |
 
+- **Smaller models:** the [small and medium sizes](docs/en/models.md) need 4 GB and 6 GB of GPU memory, and 1.7 GB and
+  2.3 GB of disk for the models.
 - **Software:** Linux and Python 3.10. The GPU must be NVIDIA: the pinned build is PyTorch 2.6
   with CUDA 12.4.
 
@@ -54,6 +56,15 @@ FOOTNOTES_INSECURE_COOKIES=1 python wsgi.py --host 127.0.0.1     # http://127.0.
 ```
 
 Surya downloads its own OCR weights (about 1.1 GB) the first time it runs.
+
+For a computer with less GPU memory or disk space, fetch a smaller size instead and make it the default:
+
+```bash
+python setup_models.py --size small     # or medium
+FOOTNOTES_MODEL_SIZE=small FOOTNOTES_INSECURE_COOKIES=1 python wsgi.py --host 127.0.0.1
+```
+
+[Models](docs/en/models.md) compares the sizes and lists the licences.
 
 `python setup_models.py --herbert` also fetches a second set of parsing models, with HerBERT for parts
 and names where the default set uses XLM-R. It takes another 4.2 GB of disk and more GPU memory, so it
@@ -153,6 +164,7 @@ All optional: the app runs with none of them set.
 | `CROSSREF_EMAIL` | Contact address for the Crossref/OpenAIRE "polite pool", which gives better rate limits during metadata enrichment. |
 | `GROBID_URL` | Base URL of a GROBID server. |
 | `FOOTNOTES_MODELS_REPO` | Hugging Face repo that `setup_models.py` downloads from. |
+| `FOOTNOTES_MODEL_SIZE` | Default model size for new uploads: `small`, `medium` or `large`. |
 | `FOOTNOTES_INSECURE_COOKIES=1` | Allow login over plain HTTP, for trying the app on your own machine only. |
 | `CUDA_VISIBLE_DEVICES=''` | Force CPU-only inference. |
 
@@ -185,7 +197,8 @@ The [model weights](https://huggingface.co/FootnotesExtractor/footnotes-extracto
 released under the same licence. Some of the books used for training are under non-commercial
 licences, so commercial use of the models would require retraining without them.
 
-It relies on Ultralytics and PyMuPDF (AGPL-3.0) and Surya (GPL-3.0). Surya's model weights have
+It relies on Ultralytics and PyMuPDF (AGPL-3.0), Surya (GPL-3.0) and, for the small and medium sizes, RapidOCR and the
+PP-OCRv6 models (Apache-2.0). Every model's licence is in [Models](docs/en/models.md#licences). Surya's model weights have
 their own licence, `cc-by-nc-sa-4.0`, with a waiver for organisations below certain revenue and
 funding limits: see Surya's documentation before commercial use.
 

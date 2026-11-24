@@ -37,4 +37,5 @@ Wszystko działa na własnym serwerze. Przesłane pliki PDF, wyniki i konta na n
 
 - [Poradnik](tutorial.md): instalacja, uruchomienie i praca z pierwszym dokumentem.
 - [Co potrafi program](features.md): główne funkcje z nagraniami.
+- [Modele](models.md): rozmiary, instalacja, licencje.
 - [HTTP API](api.md): korzystanie z programu w skryptach.

@@ -107,9 +107,10 @@ Optional form fields at upload:
 | `od_conf` | `0.5` | Confidence threshold of the footnote detector |
 | `ref_conf`, `comp_conf` | `0.7` | Confidence thresholds for references and their parts |
 | `batch_size` | `8` | Between 1 and 64 |
+| `model_size` | none | `small`, `medium` or `large`: sets the three models below (see [Models](models.md)). A model named as well wins. `400` if the size is unknown or not installed |
 | `od_model` | `yolo11n_validated_v2` | Detection model |
 | `ner_suite` | `validated_v2_xlmr_nested` | Parsing models. `validated_v2_nested` is available if it was downloaded with `--herbert` |
-| `ocr_engine` | `surya` | Any other value uses the PDF's text layer |
+| `ocr_engine` | `surya` | `surya`, `ppocr_small`, `ppocr_medium`, or `pdfminer` for the PDF's text layer. An unknown name also means the text layer; an engine that is not installed gives `400` |
 | `split_footnotes` | `true` | Split areas by footnote number. Turn it off when the numbers are not continuous |
 | `enable_ibidem` | `true` | Take over missing parts for *ibid.* and *op. cit.* |
 | `split_multi_work` | `true` | Split a reference that holds several works into works |
@@ -198,7 +199,7 @@ Offsets count characters of the footnote's `text`. Labels: `Author`, `Editor`, `
   `restore`.
 - **Models:** `GET /ner-status` and `GET /ocr-status` say which models are used for edits, whether they can be
   loaded and what the alternatives are. `PUT /ner-suite` (`{"ner_suite"}`) and `PUT /ocr-engine`
-  (`{"ocr_engine": "surya"}` or `"pdfminer"`) change them for later edits; what is saved stays as it is.
+  (`{"ocr_engine": "surya"}`, `"ppocr_small"`, `"ppocr_medium"` or `"pdfminer"`) change them for later edits; what is saved stays as it is.
 
 ## Reviewing
 

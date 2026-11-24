@@ -5,12 +5,12 @@ Shared OCR engine used both by the bulk PDF-processing pipeline
 (`PDFFootnoteExtractor`) and by on-demand re-OCR of a single, user-edited
 bounding box (see app.py's footnote add/edit endpoints).
 
-Two engines: Surya (real OCR — rasterizes the region and reads it as an
-image, so it works even on scanned/image-only PDFs) and pdfminer.six
-(extracts the region's already-embedded PDF text layer directly — fast, no
-model weights, but only works when the PDF actually has one). Surya's model
-weights are expensive to load, so instances are cached per engine type for
-the lifetime of the process instead of being reloaded per job/request.
+Surya and PP-OCR (pipeline/ppocr.py, two sizes) are real OCR: they rasterize
+the region and read it as an image, so they work even on scanned/image-only
+PDFs. pdfminer.six extracts the region's already-embedded PDF text layer
+directly: fast, no model weights, but only works when the PDF actually has
+one. Model weights are expensive to load, so instances are cached per engine
+type for the lifetime of the process instead of being reloaded per job/request.
 """
 
 import threading
@@ -22,10 +22,12 @@ import fitz  # PyMuPDF — only used for page rendering/bounds on the Surya path
 from PIL import Image
 
 try:
+    from pipeline import ppocr
     from pipeline.model_pool import InstancePool
     from pipeline.line_hyphens import join_line_break_hyphens
 except ImportError:
     # Handle if run directly
+    import ppocr
     from model_pool import InstancePool
     from line_hyphens import join_line_break_hyphens
 
@@ -82,6 +84,7 @@ class OCREngine:
     def __init__(self, engine: str):
         self.engine = engine
         self.use_surya = (engine == 'surya')
+        self.reads_images = engine != 'pdfminer'     # else: the PDF's text layer
         # A copy is shared by every thread that isn't leasing one: document
         # processing and the viewer's box OCR (waitress serves requests on
         # several threads). The Surya models are not safe to run concurrently —
@@ -89,7 +92,7 @@ class OCREngine:
         # two overlapping calls fail with "The size of tensor a (28) must match
         # the size of tensor b (19)", each seeing the other's batch. Calls on
         # one copy take turns; separate copies run side by side.
-        self._surya_lock = threading.Lock()
+        self._ocr_lock = threading.Lock()
 
         if self.use_surya:
             from surya.model.recognition.model import load_model as load_rec_model
@@ -111,6 +114,8 @@ class OCREngine:
                 if len(mixed) > 1:
                     print(f"⚠️ {name} loaded with mixed dtypes {mixed}; converting to {surya_settings.MODEL_DTYPE}")
                 setattr(self, name, model.to(dtype=surya_settings.MODEL_DTYPE))
+        elif engine in ppocr.ENGINES:
+            self.ppocr = ppocr.PPOCR(engine)
         elif engine != 'pdfminer':
             raise ValueError(f"Unknown OCR engine: {engine!r}")
         # pdfminer.six has nothing to preload — it parses each PDF lazily,
@@ -148,7 +153,7 @@ class OCREngine:
             return run_ocr(imgs, lng, self.surya_det_model, self.surya_det_processor,
                            self.surya_rec_model, self.surya_rec_processor)
 
-        with self._surya_lock:
+        with self._ocr_lock:
             try:
                 results = ocr(cropped_imgs, langs)
             except torch.cuda.OutOfMemoryError:
@@ -181,41 +186,84 @@ class OCREngine:
                     "min_x": min(xs), "max_x": max(xs),
                     "min_y": min(ys), "max_y": max(ys)
                 })
-
-            # Sort boxes primarily by top y-coordinate
-            boxes.sort(key=lambda b: b['min_y'])
-
-            lines_grouped = []
-            for box in boxes:
-                added = False
-                box_height = box['max_y'] - box['min_y']
-
-                for line_group in lines_grouped:
-                    group_min_y = min(b['min_y'] for b in line_group)
-                    group_max_y = max(b['max_y'] for b in line_group)
-                    group_height = group_max_y - group_min_y
-
-                    intersection = max(0, min(box['max_y'], group_max_y) - max(box['min_y'], group_min_y))
-
-                    # Group if there's significant vertical overlap (>20% of the smaller box's height)
-                    if intersection > 0.2 * min(box_height, group_height):
-                        line_group.append(box)
-                        added = True
-                        break
-
-                if not added:
-                    lines_grouped.append([box])
-
-            # Sort left-to-right within groups and join
-            joined_lines = []
-            for line_group in lines_grouped:
-                line_group.sort(key=lambda b: b['min_x'])
-                joined_lines.append(" ".join(b['text'] for b in line_group))
-
-            text = join_line_break_hyphens("\n".join(joined_lines))
-            final_texts.append(text.strip())
+            final_texts.append(self._join_lines(boxes))
 
         return final_texts
+
+    def _run_ppocr(self, cropped_imgs: List[Image.Image]) -> List[str]:
+        texts = []
+        with self._ocr_lock:
+            for img in cropped_imgs:
+                try:
+                    boxes = self.ppocr.read(img)
+                except torch.cuda.OutOfMemoryError:
+                    # The GPU is shared: free what PyTorch has cached and try
+                    # once more; failing again fails the job, as with Surya.
+                    torch.cuda.empty_cache()
+                    boxes = self.ppocr.read(img)
+                texts.append(self._join_tight_lines(boxes))
+        return texts
+
+    def _read_images(self, cropped_imgs: List[Image.Image]) -> List[str]:
+        return self._run_surya_ocr(cropped_imgs) if self.use_surya else self._run_ppocr(cropped_imgs)
+
+    @staticmethod
+    def _join_tight_lines(boxes: List[Dict[str, Any]]) -> str:
+        """_join_lines for PP-OCR, whose boxes are taller than the line: at 150
+        DPI the boxes of two close lines overlap by more than the 20% that
+        _join_lines takes for one line, which swapped them. A box belongs to a
+        line when it overlaps the line's average band by over half of the
+        smaller height."""
+        lines: List[List[Dict[str, Any]]] = []
+        for box in sorted(boxes, key=lambda b: (b['min_y'] + b['max_y']) / 2):
+            height = box['max_y'] - box['min_y']
+            for line in lines:
+                top = sum(b['min_y'] for b in line) / len(line)
+                bottom = sum(b['max_y'] for b in line) / len(line)
+                overlap = min(box['max_y'], bottom) - max(box['min_y'], top)
+                if overlap > 0.5 * min(height, bottom - top):
+                    line.append(box)
+                    break
+            else:
+                lines.append([box])
+        joined = [' '.join(b['text'] for b in sorted(line, key=lambda b: b['min_x'])) for line in lines]
+        return join_line_break_hyphens('\n'.join(joined)).strip()
+
+    @staticmethod
+    def _join_lines(boxes: List[Dict[str, Any]]) -> str:
+        """Boxes of text in an image -> the text: boxes beside each other form
+        one line, left to right; lines go top to bottom."""
+        # Sort boxes primarily by top y-coordinate
+        boxes = sorted(boxes, key=lambda b: b['min_y'])
+
+        lines_grouped = []
+        for box in boxes:
+            added = False
+            box_height = box['max_y'] - box['min_y']
+
+            for line_group in lines_grouped:
+                group_min_y = min(b['min_y'] for b in line_group)
+                group_max_y = max(b['max_y'] for b in line_group)
+                group_height = group_max_y - group_min_y
+
+                intersection = max(0, min(box['max_y'], group_max_y) - max(box['min_y'], group_min_y))
+
+                # Group if there's significant vertical overlap (>20% of the smaller box's height)
+                if intersection > 0.2 * min(box_height, group_height):
+                    line_group.append(box)
+                    added = True
+                    break
+
+            if not added:
+                lines_grouped.append([box])
+
+        # Sort left-to-right within groups and join
+        joined_lines = []
+        for line_group in lines_grouped:
+            line_group.sort(key=lambda b: b['min_x'])
+            joined_lines.append(" ".join(b['text'] for b in line_group))
+
+        return join_line_break_hyphens("\n".join(joined_lines)).strip()
 
     # -- pdfminer.six text-layer extraction (shared by both entrypoints) --
     #
@@ -294,7 +342,7 @@ class OCREngine:
                                         page_number: int, image_size: Tuple[int, int],
                                         page_image: Optional[Image.Image] = None) -> List[str]:
         """Extract text from specific image-space bounding boxes on a PDF page."""
-        if self.use_surya and page_image is not None:
+        if self.reads_images and page_image is not None:
             pad = 5
             cropped_imgs = []
             for bbox in bounding_boxes:
@@ -308,7 +356,7 @@ class OCREngine:
                 y2 = max(y1 + 1, min(int(bbox[3]) + pad, page_image.height))
                 cropped_imgs.append(page_image.crop((x1, y1, x2, y2)))
 
-            return self._run_surya_ocr(cropped_imgs)
+            return self._read_images(cropped_imgs)
         else:
             lines, page_width, page_height = self._pdfminer_page_lines(pdf_path, page_number)
             if page_width == 0.0 and page_height == 0.0:
@@ -329,7 +377,7 @@ class OCREngine:
 
             page = pdf_document[page_index]
 
-            if self.use_surya:
+            if self.reads_images:
                 pixmap = page.get_pixmap(dpi=RENDER_DPI)
                 page_image = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
                 image_bbox = [

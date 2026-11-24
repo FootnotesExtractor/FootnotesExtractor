@@ -16,10 +16,10 @@
 
 | | Minimum |
 |---|---|
-| GPU | NVIDIA, 10 GB pamięci |
+| GPU | NVIDIA, 10 GB pamięci (4 GB dla [małych](models.md) modeli, 6 GB dla średnich) |
 | CPU | 4 rdzenie |
 | RAM | 12 GB |
-| Dysk | 6,1 GB na program i pakiety Pythona, 6,7 GB na modele |
+| Dysk | 6,1 GB na program i pakiety Pythona, 6,7 GB na modele (1,7 GB na małe) |
 | Oprogramowanie | Linux, Python 3.10 |
 
 Instalowana wersja PyTorch wymaga sterownika NVIDIA obsługującego CUDA 12.4. Przed instalacją warto sprawdzić
@@ -45,6 +45,8 @@ Następnie należy otworzyć <http://127.0.0.1:5002>.
   (około 1,1 GB) przy pierwszym uruchomieniu.
 - `FOOTNOTES_INSECURE_COOKIES=1` pozwala zalogować się przez zwykłe HTTP na własnym komputerze. Tego
   ustawienia nie wolno stosować na serwerze.
+- Aby użyć mniejszych modeli, zob. [Modele](models.md): `python setup_models.py --size small` pobiera 1,7 GB
+  zamiast 5,6 GB i wymaga mniej pamięci GPU.
 - `python setup_models.py --herbert` pobiera dodatkowo drugi zestaw modeli analizy. Zajmuje 4,2 GB na dysku
   i wymaga więcej pamięci GPU niż podane minimum.
 
@@ -64,7 +66,7 @@ Interfejs można przełączyć na polski w menu języka na górnym pasku.
 1. Na stronie głównej wybrać jeden lub kilka plików PDF albo przeciągnąć je na stronę. Każdy plik może mieć do
    200 MB. Jedno przesłanie może obejmować do 900 plików i łącznie 850 MB.
 2. Opcjonalnie wybrać kolekcję w polu **Dodaj do kolekcji** lub otworzyć **Opcje zaawansowane**, aby wybrać
-   modele, silnik OCR, progi pewności i opcje przetwarzania.
+   rozmiar modeli ([Modele](models.md)), pojedyncze modele, silnik OCR, progi pewności i opcje przetwarzania.
 3. Nacisnąć **Wyodrębnij przypisy**. Strona statusu pokazuje postęp. Dokumenty czekają w kolejce, więc kilka
    przesłanych plików jest przetwarzanych po kolei.
 4. Po zakończeniu otworzyć **Widok interaktywny**.

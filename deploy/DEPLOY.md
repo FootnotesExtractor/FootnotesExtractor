@@ -122,6 +122,11 @@ The file is deleted once the account exists.
 - **Sessions.** Logging out ends every session of the account, and changing the password ends
   every other session, so a copied session cookie stops working.
 - **Deleting a job** also deletes its uploaded PDF and its files in `results/`.
+- **Model sizes.** `python setup_models.py --size small` (or medium) fetches a
+  smaller size; `FOOTNOTES_MODEL_SIZE=small` makes it the default. The sizes,
+  their GPU memory and their licences are in `docs/en/models.md`. When updating
+  an older install, run `pip install -r requirements.txt` again: the small and
+  medium OCR added packages.
 - **Dependencies.** `requirements.txt` pins the direct dependencies and `requirements.lock` every
   installed package. Check them with `pip-audit -r requirements.lock --no-deps --disable-pip`.
   Pillow and transformers stay at the versions Surya OCR 0.8.3 needs (Pillow < 11,

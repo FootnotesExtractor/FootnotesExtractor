@@ -71,6 +71,7 @@ from pipeline import consistency_checks
 from pipeline import reference_split
 from pipeline import span_templates
 from pipeline import ner_prior
+from pipeline import ppocr
 from pipeline.ocr_service import OCREngine, open_pdf
 from pipeline.ner_service import NEREngine, classify_citation_type_standalone
 from pipeline.bibtex_export import generate_bibtex
@@ -623,6 +624,10 @@ def worker(index=0):
             process_pdf_sync(job_id, pdf_path, options, uploader_id, uploader_username)
         except Exception as e:
             logger.error(f"Unhandled error processing job {job_id}: {e}")
+        try:
+            _release_optional_models(options)
+        except Exception as e:
+            logger.error(f"Could not release the models of job {job_id}: {e}")
         job_queue.task_done()
 
 # ---- model copies and job workers (Admin -> Models -> Instances) ----
@@ -700,7 +705,7 @@ def apply_model_instances():
 
 def _warm_default_copies():
     try:
-        OCREngine.pool.warm('surya')
+        OCREngine.pool.warm(DEFAULT_OCR_ENGINE)
         OD_MODELS.warm(str(Path(__file__).parent / 'models' / 'od' / f'{DEFAULT_OD_MODEL}.pt'))
         NEREngine.pool.warm((str(Path(__file__).parent / 'models' / 'ner' / DEFAULT_NER_SUITE),
                              'nested' in DEFAULT_NER_SUITE.lower()))
@@ -795,7 +800,7 @@ def process_pdf_sync(job_id, pdf_path, options, uploader_id=None, uploader_usern
         # jobs hold every allowed copy (Admin -> Models -> Instances).
         processing_status[job_id]['step'] = 'Waiting for a free copy of the models...'
         with contextlib.ExitStack() as leases:
-            leases.enter_context(OCREngine.pool.lease(OCREngine.engine_key(options.get('use_surya_ocr', True))))
+            leases.enter_context(OCREngine.pool.lease(_ocr_engine_key(options)))
             leases.enter_context(OD_MODELS.lease(od_model_path))
             ner_copy = leases.enter_context(NEREngine.pool.lease((ner_suite_path, is_nested)))
             # never on the CPU: a job whose NER isn't on the GPU fails
@@ -818,7 +823,7 @@ def process_pdf_sync(job_id, pdf_path, options, uploader_id=None, uploader_usern
                 od_model_path=od_model_path,
                 ner_suite_path=ner_suite_path,
                 is_nested=is_nested,
-                use_surya_ocr=options.get('use_surya_ocr', True), # Default to true for testing
+                ocr_engine=_ocr_engine_key(options),
                 split_footnotes=options.get('split_footnotes', True),
                 enable_ibidem_handling=options.get('enable_ibidem', True),
                 # Older jobs re-processed without the option keep their old behaviour.
@@ -865,7 +870,7 @@ def process_pdf_sync(job_id, pdf_path, options, uploader_id=None, uploader_usern
                 '_actor_client_id': f"user:{uploader_id}:{uploader_username}" if uploader_id is not None else None,
             }
             od_model_info = {'od_model': options.get('od_model', 'yolo11n_640_production'), 'od_conf_threshold': options.get('od_conf', 0.5)}
-            ocr_model_info = {'ocr_engine': 'surya' if options.get('use_surya_ocr', True) else 'pdfminer'}
+            ocr_model_info = {'ocr_engine': _ocr_engine_key(options)}
             ner_model_info = {
                 'ner_suite': options.get('ner_suite', 'mbert_production'),
                 'is_nested': is_nested,
@@ -1071,6 +1076,7 @@ CURATED_OD_MODELS = {
     'yolo12n_640': "YOLOv12-nano @ 640px (same weights as the old 'best'/'best_old')",
     'yolo12s_1280': "YOLOv12-small @ 1280px",
     'yolo11n_640_production': "YOLOv11-nano @ 640px (the earlier default)",
+    'yolov8s_validated_v2': "YOLOv8-small @ 640px (medium size)",
     'yolo11n_validated_v2': "YOLOv11-nano @ 640px (the default)",
 }
 
@@ -1079,8 +1085,45 @@ CURATED_OD_MODELS = {
 # nested. Jobs keep the models recorded in their options;
 # the 'yolo11n_640_production'/'mbert_production' fallbacks elsewhere in this
 # file are for old jobs that predate those options, so they stay as they are.
-DEFAULT_OD_MODEL = 'yolo11n_validated_v2'
-DEFAULT_NER_SUITE = 'validated_v2_xlmr_nested'
+#
+# Model sizes: one choice for all three stages (upload form, API "model_size",
+# setup_models.py --size). Large is the default; it shares the small size's detector.
+MODEL_SIZES = {
+    'small': {'od_model': 'yolo11n_validated_v2', 'ner_suite': 'validated_v2_distilbert_nested', 'ocr_engine': 'ppocr_small'},
+    'medium': {'od_model': 'yolov8s_validated_v2', 'ner_suite': 'validated_v2_mbert_nested', 'ocr_engine': 'ppocr_medium'},
+    'large': {'od_model': 'yolo11n_validated_v2', 'ner_suite': 'validated_v2_xlmr_nested', 'ocr_engine': 'surya'},
+}
+
+
+def _models_installed(choice):
+    """Whether the models of a size are on disk (Surya fetches its own)."""
+    models = Path(__file__).parent / 'models'
+    suite = models / 'ner' / choice['ner_suite']
+    return ((models / 'od' / f"{choice['od_model']}.pt").exists()
+            and all((suite / part).exists() for part in ('NER_reference', 'NER_component', 'NER_names'))
+            and (choice['ocr_engine'] not in ppocr.ENGINES or ppocr.is_installed(choice['ocr_engine'])))
+
+
+def _default_models():
+    """What uploads use unless they pick otherwise: FOOTNOTES_MODEL_SIZE when
+    set, else the large size, or the largest installed one (setup_models.py
+    --size) where that is missing."""
+    wanted = os.environ.get('FOOTNOTES_MODEL_SIZE', '').strip().lower()
+    if wanted:
+        if wanted not in MODEL_SIZES:
+            raise RuntimeError(f"FOOTNOTES_MODEL_SIZE must be one of {', '.join(MODEL_SIZES)}, not '{wanted}'")
+        return dict(MODEL_SIZES[wanted])
+    for size in ('large', 'medium', 'small'):
+        if _models_installed(MODEL_SIZES[size]):
+            return dict(MODEL_SIZES[size])
+    return dict(MODEL_SIZES['large'])
+
+
+_DEFAULTS = _default_models()
+DEFAULT_OD_MODEL = _DEFAULTS['od_model']
+DEFAULT_NER_SUITE = _DEFAULTS['ner_suite']
+DEFAULT_OCR_ENGINE = _DEFAULTS['ocr_engine']
+app.jinja_env.globals['DEFAULT_OCR_ENGINE'] = DEFAULT_OCR_ENGINE
 app.jinja_env.globals['DEFAULT_OD_MODEL'] = DEFAULT_OD_MODEL
 # Every NER suite runs on the GPU. A suite loads only when a job or an edit
 # needs it, and switching one off in Admin -> Models gives its memory back
@@ -1089,12 +1132,15 @@ NEREngine.gpu_suites = None
 app.jinja_env.globals['DEFAULT_NER_SUITE'] = DEFAULT_NER_SUITE
 
 # OCR engines aren't discovered from disk (unlike OD/NER above) — there are
-# only ever these two, so they're just a fixed dict. Kept in the same
+# only ever these, so they're just a fixed dict; PP-OCR is offered only where
+# its files are (setup_models.py --size). Kept in the same
 # {key: description} shape as CURATED_OD_MODELS so get_available_models()
 # can build all three model types (od_model/ner_suite/ocr_engine) the same
 # way, including the same admin-disable treatment.
 OCR_ENGINES = {
     'surya': "Surya OCR (Experimental)",
+    'ppocr_small': "PP-OCRv6 small",
+    'ppocr_medium': "PP-OCRv6 medium",
     'pdfminer': "PDFMiner (Text Layer)",
 }
 
@@ -1167,6 +1213,10 @@ def get_available_models():
                         base_name = 'Validated v2: XLM-R large / XLM-R large / XLM-R base'
                     elif key == 'validated_v2_nested':
                         base_name = 'Validated v2: XLM-R large / HerBERT large / HerBERT base'
+                    elif key == 'validated_v2_distilbert_nested':
+                        base_name = 'Validated v2 (small): DistilBERT multilingual'
+                    elif key == 'validated_v2_mbert_nested':
+                        base_name = 'Validated v2 (medium): mBERT'
                     elif base_raw == 'xlmroberta':
                         base_name = 'XLMRoBERTa'
                     elif base_raw == 'distilbert':
@@ -1193,9 +1243,71 @@ def get_available_models():
             'status': _status('ocr_engine', key)
         }
         for key, description in OCR_ENGINES.items()
+        if key not in ppocr.ENGINES or ppocr.is_installed(key)
     }
 
     return od_models, ner_suites, ocr_engines
+
+
+def available_sizes(od_models, ner_suites, ocr_engines):
+    """{size: {od_model, ner_suite, ocr_engine, 'status'}} for the upload form:
+    'available', 'disabled' (an admin switched one of its models off) or
+    'not_installed'; 'default' marks what an upload uses unless it picks."""
+    sizes = {}
+    for size, choice in MODEL_SIZES.items():
+        found = [group.get(choice[kind]) for kind, group in
+                 (('od_model', od_models), ('ner_suite', ner_suites), ('ocr_engine', ocr_engines))]
+        if None in found:
+            status = 'not_installed'
+        else:
+            status = 'available' if all(m['status'] == 'available' for m in found) else 'disabled'
+        sizes[size] = dict(choice, status=status, default=choice == _DEFAULTS)
+    return sizes
+
+
+def _release_optional_models(options):
+    """After a job with a size other than the default: give the GPU memory of
+    that size's models back. Loaded models otherwise stay for reuse, and each
+    size tried would hold several GB beside the default set. A queued job that
+    wants the same ones keeps them; an edit on the document loads them again."""
+    waiting = [st.get('options') or {} for st in list(processing_status.values()) if st.get('status') == 'queued']
+    engine = _ocr_engine_key(options)
+    if engine in ppocr.ENGINES and engine != DEFAULT_OCR_ENGINE and engine not in map(_ocr_engine_key, waiting):
+        OCREngine.pool.unload(engine)
+    suite = options.get('ner_suite')
+    if (suite in {choice['ner_suite'] for choice in MODEL_SIZES.values()} - {DEFAULT_NER_SUITE}
+            and suite not in [w.get('ner_suite') for w in waiting]):
+        NEREngine.pool.unload((_model_path('ner', suite), 'nested' in suite.lower()))
+    detector = options.get('od_model')
+    if (detector in {choice['od_model'] for choice in MODEL_SIZES.values()} - {DEFAULT_OD_MODEL}
+            and detector not in [w.get('od_model') for w in waiting]):
+        OD_MODELS.unload(_model_path('od', detector, '.pt'))
+
+
+def _ocr_options(engine):
+    """How an OCR engine is stored in a job's options: by name, with the older
+    yes/no flag beside it for anything that still reads that."""
+    return {'ocr_engine': engine, 'use_surya_ocr': engine == 'surya'}
+
+
+def _model_choice(form):
+    """(options, error) for the three model selections of an upload, form or
+    API: the named models, then those of "model_size", then the defaults. A
+    model named explicitly wins over the size's. Accounts without Advanced
+    Options get the defaults whatever is sent (see _limit_upload_options)."""
+    if not has_feature('advanced_options'):
+        return {'od_model': DEFAULT_OD_MODEL, 'ner_suite': DEFAULT_NER_SUITE, **_ocr_options(DEFAULT_OCR_ENGINE)}, None
+    size = (form.get('model_size') or '').strip().lower()
+    if size and size not in MODEL_SIZES:
+        return {}, f"model_size must be one of: {', '.join(MODEL_SIZES)}"
+    preset = MODEL_SIZES[size] if size else _DEFAULTS
+    if size and not _models_installed(preset):
+        return {}, f"The {size} models are not installed (python setup_models.py --size {size})."
+    engine = form.get('ocr_engine') or preset['ocr_engine']
+    return {'od_model': form.get('od_model') or preset['od_model'],
+            'ner_suite': form.get('ner_suite') or preset['ner_suite'],
+            # as before: a name that is no engine means the PDF's text layer
+            **_ocr_options(engine if engine in OCR_ENGINES else 'pdfminer')}, None
 
 
 _MAX_BATCH_SIZE = 64
@@ -1237,7 +1349,7 @@ def _limit_upload_options(options):
         options.update({
             'debug': False, 'cpu_mode': False,
             'od_conf': 0.5, 'ref_conf': 0.7, 'comp_conf': 0.7, 'batch_size': 8,
-            'od_model': DEFAULT_OD_MODEL, 'ner_suite': DEFAULT_NER_SUITE, 'use_surya_ocr': True,
+            'od_model': DEFAULT_OD_MODEL, 'ner_suite': DEFAULT_NER_SUITE, **_ocr_options(DEFAULT_OCR_ENGINE),
             'split_footnotes': True, 'enable_ibidem': True, 'split_multi_work': True,
         })
     if not has_feature('show_references'):
@@ -1256,12 +1368,14 @@ def _validate_model_selection(options):
     # Allow-list first: a model name becomes a file path (models/od/<name>.pt,
     # models/ner/<name>), so only names the models directory actually offers
     # are accepted; the admin deny-list below applies on top of that.
-    od_models, ner_suites, _ocr_engines = get_available_models()
+    od_models, ner_suites, ocr_engines = get_available_models()
     if options.get('od_model') not in od_models:
         return f"Unknown detection model '{options.get('od_model')}' — pick one from the list."
     if options.get('ner_suite') not in ner_suites:
         return f"Unknown NER suite '{options.get('ner_suite')}' — pick one from the list."
-    ocr_key = 'surya' if options.get('use_surya_ocr') else 'pdfminer'
+    ocr_key = _ocr_engine_key(options)
+    if ocr_key not in ocr_engines:
+        return f"OCR engine '{ocr_key}' is not installed — pick one from the list."
     for model_type, key in (
         ('od_model', options.get('od_model')),
         ('ner_suite', options.get('ner_suite')),
@@ -1279,6 +1393,7 @@ def index():
     user_groups = db.list_groups_for_user(g.user)
     user_collections = db.list_collections_for_user(g.user)
     return render_template('index.html', od_models=od_models, ner_suites=ner_suites, ocr_engines=ocr_engines,
+                            model_sizes=available_sizes(od_models, ner_suites, ocr_engines),
                             user_groups=user_groups, user_collections=user_collections)
 
 @app.route('/set-language', methods=['POST'])
@@ -1440,16 +1555,18 @@ def upload_file():
     if numeric_error:
         flash(numeric_error)
         return redirect(url_for('index'))
+    models, model_error = _model_choice(request.form)
+    if model_error:
+        flash(model_error)
+        return redirect(url_for('index'))
     options = {
         'debug': 'debug' in request.form,
         'cpu_mode': 'cpu_mode' in request.form,
         **numeric,
-        'od_model': request.form.get('od_model', DEFAULT_OD_MODEL),
-        'ner_suite': request.form.get('ner_suite', DEFAULT_NER_SUITE),
+        **models,
         'enable_grobid': 'enable_grobid' in request.form,
         'enable_enrichment': 'enable_enrichment' in request.form,
         'grobid_url': _resolve_grobid_url(g.user, request.form.get('grobid_url')),
-        'use_surya_ocr': request.form.get('ocr_engine', 'surya') == 'surya',
         # Defaults on, so it's read as an explicit value rather than checkbox
         # presence (an unchecked box sends nothing, which would silently flip
         # the default to off).
@@ -1829,9 +1946,8 @@ def ocr_status(job_id):
     engine (used to re-OCR a box when it's drawn/resized) is actually
     loadable right now, plus the alternative to switch to if not (each
     carrying its admin 'available'/'disabled' status — see ner_status)."""
-    use_surya = _get_use_surya_ocr(job_id)
-    current_key = 'surya' if use_surya else 'pdfminer'
-    available = _ocr_engine_available(use_surya)
+    current_key = _get_ocr_engine(job_id)
+    available = _ocr_engine_available(current_key)
 
     _od_models, _ner_suites, ocr_engines = get_available_models()
     alternatives = [{'key': key, 'name': engine['name'], 'status': engine['status']} for key, engine in ocr_engines.items() if key != current_key]
@@ -1846,7 +1962,7 @@ def ocr_status(job_id):
 @job_editor_required
 def update_job_ocr_engine(job_id):
     """Switch which OCR engine future box add/resize edits on this job use.
-    Doesn't touch anything already saved — only what _get_use_surya_ocr
+    Doesn't touch anything already saved — only what _get_ocr_engine
     resolves for the next re-OCR on this job. Mirrors update_job_ner_suite,
     including rejecting a switch to an admin-disabled engine (except as a
     no-op re-selection of the one already in use)."""
@@ -1857,15 +1973,14 @@ def update_job_ocr_engine(job_id):
     if job_id not in processing_status:
         return jsonify({'error': 'Job not found'}), 404
 
-    current_key = 'surya' if _get_use_surya_ocr(job_id) else 'pdfminer'
+    current_key = _get_ocr_engine(job_id)
     if new_engine != current_key and db.is_model_disabled('ocr_engine', new_engine):
         return jsonify({'error': f"'{new_engine}' has been disabled by an admin — pick another."}), 403
 
-    use_surya = new_engine == 'surya'
-    if not _ocr_engine_available(use_surya):
+    if not _ocr_engine_available(new_engine):
         return jsonify({'error': f"'{new_engine}' isn't loadable either — pick a different engine"}), 422
 
-    processing_status[job_id].setdefault('options', {})['use_surya_ocr'] = use_surya
+    processing_status[job_id].setdefault('options', {}).update(_ocr_options(new_engine))
     save_history()
     _log_activity('ocr_engine_change', job_id, ocr_engine=new_engine, old_value=current_key)
 
@@ -2125,8 +2240,15 @@ def _delete_job_files(job_id, status=None):
     return removed
 
 
-def _get_use_surya_ocr(job_id):
-    return processing_status.get(job_id, {}).get('options', {}).get('use_surya_ocr', True)
+def _ocr_engine_key(options):
+    """The OCR engine of a job's options: 'ocr_engine' by name, or, in jobs from
+    before it was stored, the yes/no 'use_surya_ocr' (True: Surya, False: the
+    PDF's text layer; neither: Surya)."""
+    return options.get('ocr_engine') or OCREngine.engine_key(bool(options.get('use_surya_ocr', True)))
+
+
+def _get_ocr_engine(job_id):
+    return _ocr_engine_key(processing_status.get(job_id, {}).get('options', {}))
 
 
 def _empty_footnote_summary():
@@ -2160,7 +2282,7 @@ KNOWN_NAME_LABELS = {'FirstName', 'LastName'}
 
 
 def _get_ner_options(job_id):
-    """Mirror _get_use_surya_ocr: read the job's original ner_suite/is_nested
+    """Mirror _get_ocr_engine: read the job's original ner_suite/is_nested
     choice from processing_status, recorded at upload time (app.py upload_file,
     same fields process_pdf_sync uses to construct the pipeline)."""
     options = processing_status.get(job_id, {}).get('options', {})
@@ -2194,7 +2316,7 @@ def _ner_model_info(job_id):
 
 
 def _ocr_model_info(job_id):
-    return {'ocr_engine': 'surya' if _get_use_surya_ocr(job_id) else 'pdfminer'}
+    return {'ocr_engine': _get_ocr_engine(job_id)}
 
 
 def _od_model_info(job_id):
@@ -2275,15 +2397,15 @@ def _ner_suite_available(ner_suite_path, is_nested):
                for part in ('NER_reference', 'NER_component', 'NER_names'))
 
 
-def _ocr_engine_available(use_surya):
+def _ocr_engine_available(engine):
     """Mirror _ner_suite_available for the OCR engine used to re-OCR a box
     when it's drawn/resized (see OCREngine.get_instance in
     pipeline/ocr_service.py). The pdfminer.six path never loads external
-    model weights, so this only ever really fails for the Surya engine —
-    kept generic so both are checked the same way and the viewer's OCR
-    selector doesn't need to special-case either."""
+    model weights, so this only ever really fails for the others — kept
+    generic so all are checked the same way and the viewer's OCR selector
+    doesn't need to special-case any."""
     try:
-        OCREngine.get_instance(use_surya)
+        OCREngine.get_instance(engine)
         return True
     except Exception:
         return False
@@ -3781,7 +3903,7 @@ def _lp_auto_apply(job_id, actor_kwargs=None):
 
         try:
             ocr_start = time.perf_counter()
-            engine = OCREngine.get_instance(_get_use_surya_ocr(job_id))
+            engine = OCREngine.get_instance(_get_ocr_engine(job_id))
             text = engine.extract_text_for_pdf_bbox(str(pdf_path), page, bbox)
             ocr_elapsed = time.perf_counter() - ocr_start
         except Exception as e:
@@ -4540,7 +4662,7 @@ def create_footnote(job_id):
     source = payload.get('source') if payload.get('source') in ('manual', 'layout_prior_accepted') else 'manual'
 
     try:
-        engine = OCREngine.get_instance(_get_use_surya_ocr(job_id))
+        engine = OCREngine.get_instance(_get_ocr_engine(job_id))
         ocr_call_start = time.perf_counter()
         text = engine.extract_text_for_pdf_bbox(str(pdf_path), page, clean_bbox)
         ocr_elapsed = time.perf_counter() - ocr_call_start
@@ -4673,7 +4795,7 @@ def update_footnote(job_id, footnote_id):
         # spans, so reading back only the edited span would drop the rest of
         # the footnote.
         try:
-            engine = OCREngine.get_instance(_get_use_surya_ocr(job_id))
+            engine = OCREngine.get_instance(_get_ocr_engine(job_id))
             ocr_call_start = time.perf_counter()
             parts = [engine.extract_text_for_pdf_bbox(str(pdf_path), sp.get('page'), sp.get('bbox'))
                      for sp in updated_spans if sp.get('page') and sp.get('bbox')]
@@ -7268,15 +7390,15 @@ def _eager_load_default_models():
     these only loaded lazily on first use via
     OCREngine.get_instance()/NEREngine.get_instance().
 
-    Only the defaults (Surya OCR, mbert_production) are preloaded. Other
+    Only the defaults (DEFAULT_OCR_ENGINE, mbert_production) are preloaded. Other
     OCR/NER options a job can still explicitly select still lazy-load on
     first use — eagerly loading every NER suite (~8.8GB across all 4) isn't
     worth it until it's clear which ones are worth keeping around.
     """
     try:
-        print("🔧 Preloading default OCR engine (Surya)...")
-        OCREngine.get_instance(True)
-        print("✅ Surya OCR preloaded")
+        print(f"🔧 Preloading default OCR engine ({DEFAULT_OCR_ENGINE})...")
+        OCREngine.get_instance(DEFAULT_OCR_ENGINE)
+        print(f"✅ {DEFAULT_OCR_ENGINE} OCR preloaded")
     except Exception as e:
         logger.error(f"Failed to preload default OCR engine: {e}")
 

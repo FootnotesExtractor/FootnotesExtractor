@@ -51,7 +51,7 @@ def api_upload_documents():
     either a single 'file' field or a repeated 'files' field (matching the
     browser form's field name), so a simple `curl -F file=@paper.pdf` works."""
     from app import (_process_upload, _upload_limit_error, _validate_model_selection, _limit_upload_options, _resolve_grobid_url, allowed_file, BOOK_METADATA_FIELDS,
-                     DEFAULT_OD_MODEL, DEFAULT_NER_SUITE, _numeric_upload_options)
+                     _model_choice, _numeric_upload_options)
 
     files = [f for f in request.files.getlist('files') if f and f.filename]
     if not files:
@@ -75,16 +75,17 @@ def api_upload_documents():
     numeric, numeric_error = _numeric_upload_options(form)
     if numeric_error:
         return jsonify({'error': numeric_error}), 400
+    models, models_error = _model_choice(form)
+    if models_error:
+        return jsonify({'error': models_error}), 400
     options = {
         'debug': _flag('debug'),
         'cpu_mode': _flag('cpu_mode'),
         **numeric,
-        'od_model': form.get('od_model', DEFAULT_OD_MODEL),
-        'ner_suite': form.get('ner_suite', DEFAULT_NER_SUITE),
+        **models,
         'enable_grobid': _flag('enable_grobid'),
         'enable_enrichment': _flag('enable_enrichment'),
         'grobid_url': _resolve_grobid_url(g.user, form.get('grobid_url')),
-        'use_surya_ocr': form.get('ocr_engine', 'surya') == 'surya',
         'split_footnotes': _flag_default_true('split_footnotes'),
         'enable_ibidem': _flag_default_true('enable_ibidem'),
         'split_multi_work': _flag_default_true('split_multi_work'),

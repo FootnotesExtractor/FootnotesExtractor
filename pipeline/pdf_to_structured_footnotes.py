@@ -119,14 +119,16 @@ sys.path.append(str(Path(__file__).parent.parent / "4_extract_footnote"))
 class PDFFootnoteExtractor:
     """Handles PDF processing and footnote extraction"""
     
-    def __init__(self, model_path: str, cpu_mode: bool = False, debug: bool = False, save_images: bool = False, save_footnotes: bool = False, od_conf: float = 0.5, use_surya_ocr: bool = True, od_floor_conf: float = 0.05):
+    def __init__(self, model_path: str, cpu_mode: bool = False, debug: bool = False, save_images: bool = False, save_footnotes: bool = False, od_conf: float = 0.5, use_surya_ocr: bool = True, od_floor_conf: float = 0.05, ocr_engine: Optional[str] = None):
         self.cpu_mode = cpu_mode
         self.debug = debug
         self.save_images = save_images
         self.save_footnotes = save_footnotes
         self.od_conf = od_conf
         self.model_path = Path(model_path)
-        self.use_surya_ocr = use_surya_ocr
+        # 'surya', 'pdfminer', 'ppocr_small' or 'ppocr_medium'; the older callers'
+        # use_surya_ocr (True: Surya, False: the text layer) when not named
+        self.ocr_engine_name = ocr_engine or OCREngine.engine_key(use_surya_ocr)
         self.render_dpi = 150
 
         # Detection runs at od_floor_conf and is filtered to od_conf in Python
@@ -151,11 +153,9 @@ class PDFFootnoteExtractor:
         # features. Read by process_pdf and persisted as the job's sidecar.
         self.last_page_proposals = {}
 
-        if self.use_surya_ocr:
-            print(f"🔧 Loading Surya OCR models...")
-        self.ocr_engine = OCREngine.get_instance(self.use_surya_ocr)
-        if self.use_surya_ocr:
-            print(f"✅ Surya OCR loaded")
+        print(f"🔧 Loading OCR engine {self.ocr_engine_name}...")
+        self.ocr_engine = OCREngine.get_instance(self.ocr_engine_name)
+        print(f"✅ OCR engine {self.ocr_engine_name} loaded")
 
         if not self.model_path.exists():
             raise FileNotFoundError(f"YOLO model not found at {model_path}")
@@ -1327,13 +1327,13 @@ class EnhancedPDFToStructuredFootnotesPipeline:
                  od_conf: float = 0.5, ref_conf: float = 0.8, comp_conf: float = 0.8,
                  od_model_path: Optional[str] = None, ner_suite_path: Optional[str] = "models/ner/mbert_production", is_nested: bool = False, use_surya_ocr: bool = True,
                  split_footnotes: bool = True, enable_ibidem_handling: bool = True, od_floor_conf: float = 0.05,
-                 split_multi_work: bool = False):
+                 split_multi_work: bool = False, ocr_engine: Optional[str] = None):
         self.debug = debug
         self.cpu_mode = cpu_mode
         self.od_conf = od_conf
         self.ref_conf = ref_conf
         self.comp_conf = comp_conf
-        self.use_surya_ocr = use_surya_ocr
+        self.ocr_engine_name = ocr_engine or OCREngine.engine_key(use_surya_ocr)
         self.split_footnotes = split_footnotes
         self.enable_ibidem_handling = enable_ibidem_handling
 
@@ -1342,8 +1342,8 @@ class EnhancedPDFToStructuredFootnotesPipeline:
         if od_model_path is None:
             od_model_path = script_dir / "models" / "od" / "yolo11n_640_production.pt"
 
-        self.pdf_extractor = PDFFootnoteExtractor(str(od_model_path), cpu_mode, debug, save_images, save_footnotes, od_conf, self.use_surya_ocr,
-                                                  od_floor_conf=od_floor_conf)
+        self.pdf_extractor = PDFFootnoteExtractor(str(od_model_path), cpu_mode, debug, save_images, save_footnotes, od_conf,
+                                                  od_floor_conf=od_floor_conf, ocr_engine=self.ocr_engine_name)
 
         if ner_suite_path is None:
             ner_suite_path = "models/ner/mbert_production"

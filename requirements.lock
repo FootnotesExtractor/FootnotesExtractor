@@ -11,6 +11,7 @@ cffi==2.1.1
 charset-normalizer==3.4.9
 citeproc-py==0.11.1
 click==8.4.2
+colorlog==6.12.0
 contourpy==1.3.2
 cryptography==50.0.0
 cuda-bindings==13.3.1
@@ -73,6 +74,8 @@ nvidia-nvjitlink-cu12==12.4.127
 nvidia-nvshmem-cu13==3.4.5
 nvidia-nvtx==13.0.85
 nvidia-nvtx-cu12==12.4.127
+omegaconf==2.4.0
+opencv-python-headless==4.14.0.94
 opencv-python==4.14.0.94
 openpyxl==3.1.5
 packaging==26.3
@@ -85,6 +88,7 @@ pluggy==1.6.0
 polars==1.43.2
 polars-runtime-32==1.43.2
 psutil==7.2.2
+pyclipper==1.4.0
 pycparser==3.0
 pydantic==2.13.4
 pydantic-settings==2.15.0
@@ -99,10 +103,12 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 pytz==2026.3.post1
 PyYAML==6.0.3
+rapidocr==3.10.0
 regex==2026.7.19
 requests==2.34.2
 rich==15.0.0
 safetensors==0.8.0
+shapely==2.1.2
 shellingham==1.5.4
 six==1.17.0
 surya-ocr==0.8.3

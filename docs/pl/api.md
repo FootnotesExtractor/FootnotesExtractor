@@ -107,9 +107,10 @@ Opcjonalne pola formularza przy przesyłaniu:
 | `od_conf` | `0.5` | Próg pewności wykrywania przypisów |
 | `ref_conf`, `comp_conf` | `0.7` | Progi pewności referencji i ich części |
 | `batch_size` | `8` | Od 1 do 64 |
+| `model_size` | brak | `small`, `medium` lub `large`: ustawia trzy modele poniżej (zob. [Modele](models.md)). Model podany osobno ma pierwszeństwo. `400`, gdy rozmiar jest nieznany lub niezainstalowany |
 | `od_model` | `yolo11n_validated_v2` | Model wykrywania |
 | `ner_suite` | `validated_v2_xlmr_nested` | Modele analizy. `validated_v2_nested` jest dostępny, jeśli pobrano go z `--herbert` |
-| `ocr_engine` | `surya` | Każda inna wartość oznacza warstwę tekstową PDF |
+| `ocr_engine` | `surya` | `surya`, `ppocr_small`, `ppocr_medium` albo `pdfminer` dla warstwy tekstowej PDF. Nieznana nazwa też oznacza warstwę tekstową; silnik niezainstalowany daje `400` |
 | `split_footnotes` | `true` | Podział obszarów według numerów przypisów. Wyłączyć, gdy numeracja nie jest ciągła |
 | `enable_ibidem` | `true` | Przejmowanie brakujących części dla *ibid.* i *op. cit.* |
 | `split_multi_work` | `true` | Podział referencji zawierającej kilka prac |
@@ -197,7 +198,7 @@ Położenia liczą znaki w polu `text` przypisu. Etykiety: `Author`, `Editor`, `
   `restore`.
 - **Modele:** `GET /ner-status` i `GET /ocr-status` podają, które modele służą do poprawek, czy da się je
   wczytać i jakie są inne. `PUT /ner-suite` (`{"ner_suite"}`) oraz `PUT /ocr-engine`
-  (`{"ocr_engine": "surya"}` lub `"pdfminer"`) zmieniają je dla kolejnych poprawek, a zapisane dane zostają.
+  (`{"ocr_engine": "surya"}`, `"ppocr_small"`, `"ppocr_medium"` lub `"pdfminer"`) zmieniają je dla kolejnych poprawek, a zapisane dane zostają.
 
 ## Sprawdzanie
 

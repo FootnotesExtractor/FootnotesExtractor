@@ -9,6 +9,12 @@ they live in a separate Hub repo and are pulled in here after cloning:
     python setup_models.py
     python wsgi.py
 
+`python setup_models.py --size small` (or medium; several may be given,
+separated by commas) fetches a smaller model size, which needs less GPU memory
+and disk space. Large is the default, what this script fetches without
+--size. On an install without it the app uses the largest size that is there;
+FOOTNOTES_MODEL_SIZE picks the default when there are several.
+
 `python setup_models.py --herbert` also fetches a second NER suite (about 4.2 GB)
 that you can choose instead of the default.
 
@@ -46,8 +52,54 @@ OPTIONAL = [
 ]
 
 
+# The model sizes (app.py: MODEL_SIZES), for --size. A size lists all it needs,
+# so it works alone. Large is the default set, REQUIRED; Surya, its OCR, fetches
+# its own weights.
+SIZES = {
+    "small": [
+        "od/yolo11n_validated_v2.pt",
+        "ner/validated_v2_distilbert_nested/NER_reference/",
+        "ner/validated_v2_distilbert_nested/NER_component/",
+        "ner/validated_v2_distilbert_nested/NER_names/",
+        "ocr/ppocr_small/",
+    ],
+    "medium": [
+        "od/yolov8s_validated_v2.pt",
+        "ner/validated_v2_mbert_nested/NER_reference/",
+        "ner/validated_v2_mbert_nested/NER_component/",
+        "ner/validated_v2_mbert_nested/NER_names/",
+        "ocr/ppocr_medium/",
+    ],
+    "large": REQUIRED,
+}
+# Download sizes in GB (decimal), for the message before a download.
+GB = {"large": 5.6, "herbert": 4.2, "small": 1.7, "medium": 2.3}
+
+
+def sizes(argv) -> list:
+    """The sizes named with --size small,medium or --size=small; SystemExit for
+    a name that is no size."""
+    named = []
+    for i, arg in enumerate(argv):
+        if arg == "--size":
+            if i + 1 >= len(argv):
+                raise SystemExit("--size needs a value: " + ", ".join(SIZES))
+            named += argv[i + 1].split(",")
+        elif arg.startswith("--size="):
+            named += arg.split("=", 1)[1].split(",")
+    named = [name.strip().lower() for name in named]
+    unknown = [name for name in named if name not in SIZES]
+    if unknown:
+        raise SystemExit(f"unknown size '{unknown[0]}': choose from {', '.join(SIZES)}")
+    return list(dict.fromkeys(named))
+
+
 def wanted(argv) -> list:
-    return REQUIRED + OPTIONAL if "--herbert" in argv else list(REQUIRED)
+    chosen = sizes(argv)
+    paths = [path for size in chosen for path in SIZES[size]] if chosen else list(REQUIRED)
+    if "--herbert" in argv:
+        paths += OPTIONAL
+    return list(dict.fromkeys(paths))
 
 
 def main() -> int:
@@ -63,8 +115,9 @@ def main() -> int:
 
     print(f"Source     : {MODELS_REPO}")
     print(f"Destination: {MODELS_DIR}")
-    size = "~10 GB" if len(required) > len(REQUIRED) else "~5.6 GB"
-    print(f"Downloading ({size} on a first run; resumable)...\n")
+    chosen = sizes(sys.argv)
+    total = sum(GB[name] for name in chosen or ["large"]) + (GB["herbert"] if "--herbert" in sys.argv else 0)
+    print(f"Downloading (about {total:.1f} GB on a first run; resumable)...\n")
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     try:
@@ -89,6 +142,8 @@ def main() -> int:
         return 1
 
     print("\nAll required models present. Start the app with:  python wsgi.py")
+    if chosen:
+        print(f"To make a size the default:  FOOTNOTES_MODEL_SIZE={chosen[0]} python wsgi.py")
     return 0
 
 
