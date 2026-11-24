@@ -137,6 +137,7 @@ footer a { color: inherit; }
       <a href="#how">How it works</a>
       <a href="#install">Install</a>
       <a href="#api">API</a>
+      <a href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/docs/en/README.md">Documentation</a>
       <a href="https://github.com/FootnotesExtractor/FootnotesExtractor">GitHub</a>
       <a href="https://huggingface.co/FootnotesExtractor/footnotes-extractor-models">Models</a>
     </nav>
@@ -147,6 +148,8 @@ footer a { color: inherit; }
     <p class="lead">FootnotesExtractor reads the footnotes of a scholarly book, born-digital or scanned, finds every reference in them, tags its parts and hands them to you as data you can count, link and export. It runs on your own server.</p>
     <div class="actions">
       <a class="btn primary" href="#install">Install</a>
+      <a class="btn secondary" href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/docs/en/README.md">Documentation</a>
+      <a class="btn secondary" href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/docs/pl/README.md" lang="pl" hreflang="pl">Dokumentacja po polsku</a>
       <a class="btn secondary" href="https://github.com/FootnotesExtractor/FootnotesExtractor">Source code on GitHub</a>
     </div>
 
@@ -285,7 +288,7 @@ while status() not in ("completed", "error"):
 bib = requests.get(f"{BASE}/download/{job}", headers=HEADERS, params={"format": "bibtex_expanded"})
 with open("book.bib", "wb") as f:
     f.write(bib.content)</code></pre></div>
-      <p>The <a href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/API.md">API reference</a> covers editing, groups, collections and the other export formats.</p>
+      <p>The <a href="https://github.com/FootnotesExtractor/FootnotesExtractor/blob/main/docs/en/api.md">API reference</a> covers editing, groups, collections and the other export formats.</p>
     </section>
 
     <div class="rule" aria-hidden="true"></div>
